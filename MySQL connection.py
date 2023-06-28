@@ -6,7 +6,7 @@ def create_connection(host_name, user_name, user_password, db_name):
 	try:
 		connection = mysql.connector.connect(
 			host=host_name,
-            user=user_name,
+            		user=user_name,
 			passwd=user_password,
 			database=db_name
 		)
