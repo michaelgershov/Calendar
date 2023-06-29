@@ -4,11 +4,28 @@ from telebot import types
 bot = telebot.TeleBot('6058933003:AAG5Ti0fmydE9xfQYzPYv35pUM4jPOt7LY0');
 
 
-@bot.message_handler(commands=['start'])
+@bot.message_handler(commands=["start"])
 def send_welcome(message):
-    bot.send_message(message.chat.id, f'Привет, {message.from_user.first_name}! Я бот-календарь!')
-    bot.send_message(message.chat.id,
-                     r'Для регистрации введите пароль, содержащий не менее 8 символов  и состоящий только из букв и цифр.')
+    bot.send_message(message.chat.id, f"Привет, {message.from_user.first_name}. Позволь представиться, я бот-календарь")
+    bot.send_message(message.chat.id, f"Для продолжения регистрации напишите свой персональный пароль (минимум 8 символов из латинского алфавита или цифр")
+
+
+@bot.message_handler(commands=["option"])
+def option(message):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    button1 = types.KeyboardButton("События, связанные со временем")
+    button2 = types.KeyboardButton("События и их приоритеты")
+    button3 = types.KeyboardButton("Статистика недели")
+    button4 = types.KeyboardButton("Добавить событие")
+    button5 = types.KeyboardButton("Свободные окна")
+    button6 = types.KeyboardButton("Выход")
+    markup.add(button1, button2, button3, button4, button5, button6)
+    bot.send_message(message.from_user.id, "Выберите опцию из меню", reply_markup=markup)
+
+
+@bot.message_handler(commands=["help"])
+def help(message):
+    bot.send_message(message.from_user.id, 'Список всех доступных команд: ')
 
 
 @bot.message_handler(commands=["creevent"])
@@ -81,24 +98,6 @@ def text_handler(message):
         except NameError:
             bot.send_message(message.chat.id, "Введенный пароль неверный. Повторите попытку")
 
-
-
-@bot.message_handler(commands=['option'])
-def option(message):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    button1 = types.KeyboardButton("Календарь на месяц")
-    button2 = types.KeyboardButton('Дела на сегодня')
-    button3 = types.KeyboardButton("Статистика")
-    button4 = types.KeyboardButton("Добавить событие")
-    button5 = types.KeyboardButton("Найти свободное окно")
-    button6 = types.KeyboardButton("Задачи с приоритетом")
-    markup.add(button1, button2, button3, button4, button5, button6)
-    bot.send_message(message.from_user.id, "Выберите нужную опцию", reply_markup=markup)
-
-
-@bot.message_handler(commands=['help'])
-def help(message):
-    bot.send_message(message.from_user.id, 'Список всех доступных команд: ')
 
 
 bot.set_my_commands([
