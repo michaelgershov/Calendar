@@ -67,8 +67,8 @@ def execute_query(connection, query):
 # INSERT INTO
 # 	user (login, password)
 # VALUES
-# 	('mishael', 'mkdfmo'),
-# 	('kush', 'lddfpk');
+# 	('mishael', '1234567890'),
+# 	('kush', '0123456789');
 # """
 #execute_query(connection, create_Users)
 
