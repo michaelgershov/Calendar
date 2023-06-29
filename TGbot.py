@@ -11,6 +11,41 @@ def send_welcome(message):
                      r'Для регистрации введите пароль, содержащий не менее 8 символов  и состоящий только из букв и цифр.')
 
 
+@bot.message_handler(commands=["creevent"])
+def send_calendar(message):
+    bot.send_message(message.chat.id, "Выберите день", reply_markup=data_calendar.create_calendar())
+
+
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callback(call):
+    global ret_data
+    ret_data = None
+    (action, year, month, day) = data_calendar.separate_callback_data(call.data)
+    curr = datetime.datetime(int(year), int(month), 1)
+    if action == "Ничего":
+        bot.answer_callback_query(callback_query_id= call.id)
+    elif action == "День":
+        ret_data = datetime.datetime(int(year), int(month), int(day))
+        bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
+        bot.send_message(call.message.chat.id, f"Вы выбрали {ret_data}")
+        bot.send_message(call.message.chat.id, "Введите нужное время, разделив часы и минуты знаком ':'")
+    elif action == "Пред-месяц":
+        pre = curr - datetime.timedelta(days=1)
+        new_keyboard = data_calendar.create_calendar(int(pre.year), int(pre.month))
+        bot.edit_message_reply_markup(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=new_keyboard)
+    elif action == "След-месяц":
+        ne = curr + datetime.timedelta(days=31)
+        bot.edit_message_reply_markup(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            reply_markup=data_calendar.create_calendar(int(ne.year), int(ne.month)))
+    else:
+        bot.send_message(call.message.chat.id, "Что-то не так!")
+
+
 @bot.message_handler(content_types=["text"])
 def password(message):
     password = message.text
