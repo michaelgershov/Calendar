@@ -47,23 +47,40 @@ def handle_callback(call):
 
 
 @bot.message_handler(content_types=["text"])
-def password(message):
-    password = message.text
-    if len(password) < 8:
-        bot.send_message(message.chat.id, 'Ваш пароль содержит менее 8 символов! Пожалуйста, повторите попытку')
-    elif password.isalnum() == False:
-        bot.send_message(message.chat.id, 'Некорректный пароль! Пожалуйста, повторите попытку!')
-    else:
-        bot.send_message(message.chat.id, 'Отлично! Ваш пароль сохранен! Теперь Вам доступны все опции!')
+def text_handler(message):
+    global password, name_event, date, event
+    m = message.text
+    pattern1 = re.compile(r"(?=.*[a-z])(?=.*[A-Z])[a-zA-Z\d]{8,}$")
+    pattern2 = re.compile(r"\d+:\d+")
+    if pattern1.fullmatch(m) is not None:
+        password = m
+        bot.send_message(message.chat.id, "Отличный пароль! Теперь можем начать нашу работу")
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        button1 = types.KeyboardButton("Календарь на месяц")
-        button2 = types.KeyboardButton('Дела на сегодня')
-        button3 = types.KeyboardButton("Статистика за неделю")
+        button1 = types.KeyboardButton("События, связанные со временем")
+        button2 = types.KeyboardButton("События и их приоритеты")
+        button3 = types.KeyboardButton("Статистика недели")
         button4 = types.KeyboardButton("Добавить событие")
-        button5 = types.KeyboardButton("Найти свободное окно")
-        button6 = types.KeyboardButton("Задачи с приоритетом")
+        button5 = types.KeyboardButton("Свободные окна")
+        button6 = types.KeyboardButton("Выход")
         markup.add(button1, button2, button3, button4, button5, button6)
-        bot.send_message(message.from_user.id, "Выберите нужную опцию", reply_markup=markup)
+        bot.send_message(message.from_user.id, "Выберите опцию из меню", reply_markup=markup)
+    elif pattern2.fullmatch(m) is not None:
+        hours, minutes = map(lambda x: int(x), m.split(":"))
+        if (0 <= hours < 24) and (0 <= minutes < 60):
+            date = ret_data.replace(hour=hours, minute=minutes)
+            bot.send_message(message.chat.id, f"Вы назначили событие на {date}")
+            bot.send_message(message.chat.id, f"Введите название события")
+        else:
+            bot.send_message(message.chat.id, "Введите корректное время")
+    else:
+        try:
+            password
+            name_event = m
+            event = [date, name_event]
+            bot.send_message(message.chat.id, f"Отлично, событие '{event[1]}' успешно назначено на {event[0]}")
+        except NameError:
+            bot.send_message(message.chat.id, "Введенный пароль неверный. Повторите попытку")
+
 
 
 @bot.message_handler(commands=['option'])
