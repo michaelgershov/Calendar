@@ -65,10 +65,10 @@ def execute_query(connection, query):
 # добавление записей
 # create_Users = """
 # INSERT INTO
-# 	user (id, login, username, password)
+# 	user (login, password)
 # VALUES
-# 	(5, 'mishael', 'mkdfmo'),
-# 	(6, 'kush', 'lddfpk');
+# 	('mishael', 'mkdfmo'),
+# 	('kush', 'lddfpk');
 # """
 #execute_query(connection, create_Users)
 
