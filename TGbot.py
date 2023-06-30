@@ -3,7 +3,7 @@ from telebot import types
 import data_calendar
 
 
-bot = telebot.TeleBot("6227807125:AAFXklXnWe5UZ4k54Lu_BqcrM1vNMTcph48")
+bot = telebot.TeleBot("6058933003:AAG5Ti0fmydE9xfQYzPYv35pUM4jPOt7LY0")
 
 
 @bot.message_handler(commands=["start"])
