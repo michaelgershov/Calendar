@@ -3,28 +3,39 @@ from telebot import types
 import data_calendar
 
 
-bot = telebot.TeleBot("6058933003:AAG5Ti0fmydE9xfQYzPYv35pUM4jPOt7LY0")
+bot = telebot.TeleBot("6227807125:AAFXklXnWe5UZ4k54Lu_BqcrM1vNMTcph48")
 
 
 @bot.message_handler(commands=["start"])
 def start_message(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    button1 = types.KeyboardButton("/signIn")
-    button2 = types.KeyboardButton("/signUp")
+    button1 = types.KeyboardButton("Войти")
+    button2 = types.KeyboardButton("Зарегистрироваться")
     markup.add(button1, button2)
     bot.send_message(message.chat.id, "Здравствуйте. Я ваш персональный бот-календарь. Выберите действие для начала работы", reply_markup=markup)
+    bot.register_next_step_handler(message, answering)
 
 
-@bot.message_handler(commands=["signIn"])
-def signIn_message(message):
-    bot.send_message(message.chat.id, "Введите свой ник пользователя", reply_markup=None)
-    bot.register_next_step_handler(message, login)
+def answering(message):
+    text = message.text
+    if text == "Войти":
+        bot.send_message(message.chat.id, "Введите свой ник пользователя", reply_markup=None)
+        bot.register_next_step_handler(message, login)
+    elif text == "Зарегистрироваться":
+        bot.send_message(message.chat.id, "Введите логин")
+        bot.register_next_step_handler(message, login)
 
 
-@bot.message_handler(commands=["signUp"])
-def signUp_message(message):
-    bot.send_message(message.chat.id, "Введите логин")
-    bot.register_next_step_handler(message, login)
+#@bot.message_handler(commands=["signIn"])
+#def signIn_message(message):
+#    bot.send_message(message.chat.id, "Введите свой ник пользователя", reply_markup=None)
+#    bot.register_next_step_handler(message, login)
+
+
+#@bot.message_handler(commands=["signUp"])
+#def signUp_message(message):
+#    bot.send_message(message.chat.id, "Введите логин")
+#    bot.register_next_step_handler(message, login)
 
 
 def login(message):
@@ -51,7 +62,7 @@ def option(message):
     bot.register_next_step_handler(message, keyboard)
 
 
-@bot.message_handler(commands=["help"])      #Vladik molodec
+@bot.message_handler(commands=["help"])
 def help(message):
     bot.send_message(message.from_user.id, 'Список всех доступных команд: ')
 
@@ -80,6 +91,7 @@ def send_event(message):
 
 @bot.message_handler(commands=["dp_from_time"])
 def set_event(message):
+
     if start_time is None:
         bot.send_message(message.chat.id, "Выберите день начала события", reply_markup=data_calendar.create_calendar(None,None,1))
     else:
@@ -127,6 +139,7 @@ def handle_callback(call):
         else:
             bot.send_message(call.message.chat.id, "Что-то не так!")
 
+
 start_time = None
 end_time = None
 def time_selector(message):
@@ -159,7 +172,7 @@ def time_selector(message):
                     end_date = ret_data.replace(hour=hours, minute=minutes)
                     bot.send_message(message.chat.id, f"Вы назначили конец события на {end_date}")
                     bot.send_message(message.chat.id, "Введите название события")
-                    bot.register_next_step_handler(message, constructor)
+                    bot.register_next_step_handler(message, save_event)
                 else:
                     bot.send_message(message.chat.id, f"Вы не можете назначить конец события раньше начала (начало в {start_date.time()}). Выберите время заново")
                     end_time = None
@@ -175,14 +188,35 @@ def time_selector(message):
     else:
         bot.send_message(message.chat.id, "Время для данного события уже зафиксировано")
 
+
 events = []
-def constructor(message):
+def save_event(message):
     global text, event, start_time, end_time, events
     text = message.text
     event = [start_date, end_date, text]
     events.append(event)
-    bot.send_message(message.chat.id, f"Событие '{event[-1]}' установлено с {event[0]} по {event[1]}", reply_markup=keyboard(message))
+    bot.send_message(message.chat.id, f"Событие '{event[-1]}' установлено с {event[0]} по {event[1]}")
     start_time, end_time = None, None
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    button1 = types.KeyboardButton("да")
+    button2 = types.KeyboardButton("нет")
+    markup.add(button1,button2)
+    bot.send_message(message.chat.id, f"Данное событие циклично?", reply_markup=markup)
+    bot.register_next_step_handler(message, looping)
+
+
+def looping(message):
+    answer = message.text
+    if answer == "да":
+        bot.send_message(message.chat.id, "ok")
+    elif answer == "нет":
+        bot.send_message(message.chat.id, "Данное событие допускает вложенность?")
+        bot.register_next_step_handler(message, embedding)
+
+
+
+def embedding(message):
+    bot.send_message(message.chat.id, "ok")
 
 
 bot.set_my_commands([
