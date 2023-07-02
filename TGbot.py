@@ -347,7 +347,6 @@ def levels_of_embedding(message):
                 EVENTS[i] = tuple(EVENTS[i])
             else:
                 pass
-        print(EVENTS)
         if None in EVENTS[0]:
             bot.send_message(message.chat.id,
                              f"Тогда всё) Событие '{EVENT[2]}' с {EVENT[0]} по {EVENT[1]} успешно создано. (не является циклическим и имеет вложенность)")
@@ -493,7 +492,6 @@ def day_interval_for_date(message):
             new_date += datetime.timedelta(days=int(num))
             EVENT_DP_DATE = (NAME, new_date, True)
             EVENTS_DP_DATE.append(EVENT_DP_DATE)
-        print(EVENTS_DP_DATE)
         bot.send_message(message.chat.id,
                          f"Все повторы данного события, а также и само событие зафиксированы. Всего их получилось {len(EVENTS_DP_DATE)}")
         EVENTS_DP_DATE.clear()
