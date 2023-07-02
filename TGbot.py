@@ -82,15 +82,18 @@ def keyboard(message):
 #######################################################################################################################
 #функция обработки выбора опций
 def selection(message):
-    sel = message.text
+    sel = message.text.lower()
     if sel == "добавить":
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        button1 = types.KeyboardButton("дата и время")
-        button2 = types.KeyboardButton("дата")
-        button3 = types.KeyboardButton("не зависит")
+        button1 = types.KeyboardButton("фиксированное")
+        button2 = types.KeyboardButton("датированное")
+        button3 = types.KeyboardButton("независимое")
         markup.add(button1, button2, button3)
         bot.send_message(message.chat.id, "Выберите нужный тип события", reply_markup=markup)
         bot.register_next_step_handler(message, type_of_event)
+    else:
+        bot.send_message(message.chat.id, "Ошибка. Выберите опцию из указанного меню")
+        bot.register_next_step_handler(message, selection)
 #######################################################################################################################
 
 
@@ -99,30 +102,29 @@ def selection(message):
 #######################################################################################################################
 #функция выбора типа события
 def type_of_event(message):
-    sel = message.text
-    if sel == "дата и время":
+    global MARK_1, DATE_EVENT
+    sel = message.text.lower()
+    if sel == "фиксированное":
+        MARK_1 = None
         depending_from_time(message)
-    elif sel == "не зависит":
+    elif sel == "датированное":
+        MARK_1 = 1
+        DATE_EVENT = None
+        depending_from_date(message)
+    elif sel == "независимое":
         category_independent(message)
-#######################################################################################################################
-
-
-#######################################################################################################################
-# ОБРАБОТКА СОЗДАНИЯ СОБЫТИЯ, ЗАВИСИМОГО ОТ ДАТЫ И ВРЕМЕНИ
-#######################################################################################################################
-#функция, выводящая календарь для начала события или конца события
-def depending_from_time(message):
-    if START_TIME is None:
-        bot.send_message(message.chat.id, "Выберите день начала события",
-                         reply_markup=data_calendar.create_calendar(None, None, 1))
     else:
-        bot.send_message(message.chat.id, "Выберите день конца события",
-                         reply_markup=data_calendar.create_calendar(None, None, START_DATE))
+        bot.send_message(message.chat.id, "Выберите или введите возможные типы событий")
+        bot.register_next_step_handler(message, type_of_event)
+#######################################################################################################################
 
 
+#######################################################################################################################
+# ОБРАБОТКА НАЖАТИЙ INLINE КНОПОК
+#######################################################################################################################
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
-    global RET_DATA, FINISH
+    global RET_DATA, FINISH, MARK_1, DATE_EVENT
     RET_DATA = None
     if call is None:
         bot.answer_callback_query(callback_query_id=call.id)
@@ -133,14 +135,29 @@ def handle_callback(call):
         if action == "День":
             RET_DATA = datetime.datetime(int(year), int(month), int(day))
             bot.delete_message(chat_id=call.message.chat.id, message_id=call.message.message_id)
-            if END_TIME is None:
-                bot.send_message(call.message.chat.id, f"Вы выбрали дату {RET_DATA.date()}")
-                msg = bot.send_message(call.message.chat.id, "Введите нужное время, разделив часы и минуты знаком ':'", reply_markup=None)
-                bot.register_next_step_handler(msg, time_selector)
+            if MARK_1 is None:
+                if END_TIME is None:
+                    bot.send_message(call.message.chat.id, f"Вы выбрали дату {RET_DATA.date()}")
+                    msg = bot.send_message(call.message.chat.id,
+                                           "Введите нужное время, разделив часы и минуты знаком ':'", reply_markup=None)
+                    bot.register_next_step_handler(msg, time_selector)
+                else:
+                    FINISH = RET_DATA
+                    msg = bot.send_message(call.message.chat.id,
+                                           f"Вы выбрали дату {FINISH.date()}. Введите количество дней в промежутке между повторами",
+                                           reply_markup=None)
+                    bot.register_next_step_handler(msg, day_interval)
             else:
-                FINISH = RET_DATA
-                msg = bot.send_message(call.message.chat.id, f"Вы выбрали дату {FINISH.date()}. Введите количество дней в промежутке между повторами", reply_markup=None)
-                bot.register_next_step_handler(msg, day_interval)
+                if DATE_EVENT is None:
+                    DATE_EVENT = RET_DATA
+                    msg = bot.send_message(call.message.chat.id, f"Вы выбрали дату {DATE_EVENT.date()}. Теперь введите название события", reply_markup=None)
+                    bot.register_next_step_handler(msg, naming)
+                else:
+                    FINISH = RET_DATA
+                    msg = bot.send_message(call.message.chat.id,
+                                           f"Вы выбрали дату {FINISH.date()}. Введите количество дней в промежутке между повторами",
+                                           reply_markup=None)
+                    bot.register_next_step_handler(msg, day_interval_for_date)
 
         elif action == "Пред-месяц":
             pre = curr - datetime.timedelta(days=1)
@@ -158,7 +175,7 @@ def handle_callback(call):
                 bot.edit_message_reply_markup(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
-                    reply_markup=data_calendar.create_calendar(int(ne.year), int(ne.month),1))
+                    reply_markup=data_calendar.create_calendar(int(ne.year), int(ne.month), 1))
             else:
                 bot.edit_message_reply_markup(
                     chat_id=call.message.chat.id,
@@ -166,6 +183,21 @@ def handle_callback(call):
                     reply_markup=data_calendar.create_calendar(int(ne.year), int(ne.month), START_DATE))
         else:
             bot.send_message(call.message.chat.id, "Выберите корректную дату!")
+#######################################################################################################################
+
+
+#######################################################################################################################
+# ОБРАБОТКА СОЗДАНИЯ СОБЫТИЯ, ЗАВИСИМОГО ОТ ДАТЫ И ВРЕМЕНИ
+#######################################################################################################################
+#функция, выводящая календарь для начала события или конца события
+def depending_from_time(message):
+    if START_TIME is None:
+        bot.send_message(message.chat.id, "Выберите день начала события",
+                         reply_markup=data_calendar.create_calendar(None, None, 1))
+    else:
+        bot.send_message(message.chat.id, "Выберите день конца события",
+                         reply_markup=data_calendar.create_calendar(None, None, START_DATE))
+
 
 START_TIME, END_TIME = None, None
 #функция обработки всех возможных вариантов установки времени начала и конца события
@@ -239,19 +271,18 @@ def time_save_event(message):
 #функция обработки введенного промежутка между повторами
 def day_interval(message):
     num = message.text
-    delta = FINISH - END_DATE
+    delta = FINISH.date() - END_DATE.date()
     origin_delta = END_DATE - START_DATE
-    if (num.isdigit() and datetime.timedelta(days=int(num)) < origin_delta):
-        bot.send_message(message.chat.id, "Ошибка. Длительность события больше промежутка между повторениями. Повторите попытку")
-        bot.register_next_step_handler(message, day_interval)
-    elif (num.isdigit() and int(num) > 0 and datetime.timedelta(days=int(num)) < delta):
-        new_start, new_end = START_DATE, END_DATE
+    if (num.isdigit() and int(num) > 0 and datetime.timedelta(days=int(num)) <= delta):
+        new_start = START_DATE.replace(year=END_DATE.date().year, month=END_DATE.date().month, day=END_DATE.date().day)
+        EVENT.append(True)
+        EVENTS.append(EVENT)
         while new_start < FINISH:
             new_start += datetime.timedelta(days=int(num))
-            new_end += datetime.timedelta(days=int(num))
+            new_end = new_start + origin_delta
             event = [new_start, new_end, TEXT, True]
             EVENTS.append(event)
-        bot.send_message(message.chat.id, f"Все повторы данного события зафиксированы. Всего их получилось {len(EVENTS)-1}")
+        bot.send_message(message.chat.id, f"Все повторы данного события и само событие зафиксированы. Всего их получилось {len(EVENTS)}")
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         button1 = types.KeyboardButton("да")
         button2 = types.KeyboardButton("нет")
@@ -282,7 +313,7 @@ def looping(message):
 #функция определения вложенности события
 def embedding(message):
     global START_TIME, END_TIME
-    START_TIME, END_TIME = None, None
+    START_TIME, END_TIME, FINISH = None, None, None
     answer = message.text
     if answer == "да":
         bot.send_message(message.chat.id, "Принял, тогда введите число уровней вложенности", reply_markup=None)
@@ -297,6 +328,7 @@ def embedding(message):
             EVENTS.append(EVENT)
             bot.send_message(message.chat.id,
                              f"Тогда всё) Событие '{EVENT[2]}' с {EVENT[0]} по {EVENT[1]} успешно создано. (является циклическим и не имеет вложенности)")
+        EVENTS.clear()
         bot.send_message(message.chat.id, 'Хотите получить напоминание о данном событии?')
         bot.register_next_step_handler(message, notification)
     else:
@@ -315,12 +347,14 @@ def levels_of_embedding(message):
                 EVENTS[i] = tuple(EVENTS[i])
             else:
                 pass
+        print(EVENTS)
         if None in EVENTS[0]:
             bot.send_message(message.chat.id,
                              f"Тогда всё) Событие '{EVENT[2]}' с {EVENT[0]} по {EVENT[1]} успешно создано. (не является циклическим и имеет вложенность)")
         else:
             bot.send_message(message.chat.id,
                              f"Тогда всё) Событие '{EVENT[2]}' с {EVENT[0]} по {EVENT[1]} успешно создано. (является циклическим и имеет вложенность)")
+        EVENTS.clear()
         bot.send_message(message.chat.id, 'Хотите получить напоминание о данном событии?')
         bot.register_next_step_handler(message, notification)
     else:
@@ -404,12 +438,78 @@ def name_independent(message):
 def exit_independent(message):
     name = message.text
     event = (name, CATEGORY)
-    EVENTS.append(event)
     bot.send_message(message.chat.id, "Событие '{}' успешно добавлено в категорию '{}'!".format(name, CATEGORY))
     keyboard(message)
 #######################################################################################################################
 
 
+#######################################################################################################################
+# ОБРАБОТКА СОБЫТИЯ, ЗАВИСИМОГО ТОЛЬКО ОТ ДАТЫ
+#######################################################################################################################
+def depending_from_date(message):
+    bot.send_message(message.chat.id, "Выберите дату события", reply_markup=data_calendar.create_calendar(None, None, 1))
+
+
+#функция определения названия события
+def naming(message):
+    global NAME
+    NAME = message.text
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    button1 = types.KeyboardButton("да")
+    button2 = types.KeyboardButton("нет")
+    markup.add(button1, button2)
+    bot.send_message(message.chat.id, "Последнее, данное событие является цикличным?", reply_markup=markup)
+    bot.register_next_step_handler(message, looping_date)
+
+
+EVENTS_DP_DATE = []
+#функция определения цикличности
+def looping_date(message):
+    global EVENT_DP_DATE
+    answer = message.text.lower()
+    if answer == "да":
+        dt = DATE_EVENT + datetime.timedelta(days=1)
+        bot.send_message(message.chat.id, "До какого дня нужно повторять событие (включительно)?",
+                         reply_markup=data_calendar.create_calendar(None, None, dt))
+    elif answer == "нет":
+        EVENT_DP_DATE = (DATE_EVENT, NAME, None)
+        EVENTS_DP_DATE.append(EVENT_DP_DATE)
+        bot.send_message(message.chat.id, f"Событие {NAME} записано на {DATE_EVENT}")
+        EVENTS_DP_DATE.clear()
+        keyboard(message)
+    else:
+        bot.send_message(message.chat.id, "Выберите или введите да/нет для продолжения")
+        bot.register_next_step_handler(message, looping_date)
+
+
+#функция добавления всех повторов
+def day_interval_for_date(message):
+    num = message.text
+    delta = FINISH - DATE_EVENT
+    if (num.isdigit() and int(num) > 0 and datetime.timedelta(days=int(num)) <= delta):
+        new_date = DATE_EVENT
+        EVENTS_DP_DATE = [(NAME, DATE_EVENT, True)]
+        while new_date < FINISH:
+            new_date += datetime.timedelta(days=int(num))
+            EVENT_DP_DATE = (NAME, new_date, True)
+            EVENTS_DP_DATE.append(EVENT_DP_DATE)
+        print(EVENTS_DP_DATE)
+        bot.send_message(message.chat.id,
+                         f"Все повторы данного события, а также и само событие зафиксированы. Всего их получилось {len(EVENTS_DP_DATE)}")
+        EVENTS_DP_DATE.clear()
+        keyboard(message)
+    else:
+        bot.send_message(message.chat.id, "Ошибка. Введите корректное натуральное число")
+        bot.register_next_step_handler(message, day_interval_for_date)
+#######################################################################################################################
+
+
+#######################################################################################################################
+# ОБРАБОТКА ТЕКСТОВЫХ НЕВЕРНЫХ СООБЩЕНИЙ
+#######################################################################################################################
+@bot.message_handler(content_types=["text"])
+def send_message(message):
+    bot.send_message(message.chat.id, "Соблюдайте, пожалуйста, формат сообщений")
 #######################################################################################################################
 # МЕНЮ
 #######################################################################################################################
@@ -419,7 +519,7 @@ bot.set_my_commands([
     telebot.types.BotCommand("/option", 'Доступные опции'),
     telebot.types.BotCommand("/settings", "Изменить логин или пароль")
 ])
-#######################################################################################################################
+########################################################################################################################
 
 
 bot.infinity_polling()
