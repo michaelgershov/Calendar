@@ -100,6 +100,7 @@ def selection(message):
 #######################################################################################################################
 # ОБРАБОТКА ВЫБОРА ТИПА СОБЫТИЯ
 #######################################################################################################################
+MARK_1 = None
 #функция выбора типа события
 def type_of_event(message):
     global MARK_1, DATE_EVENT
@@ -256,7 +257,7 @@ def time_selector(message):
 EVENTS = []
 #функция фиксирования начала, конца события и самого события
 def time_save_event(message):
-    global TEXT, EVENT, START_TIME, END_TIME, EVENTS
+    global TEXT, EVENT, EVENTS
     TEXT = message.text
     EVENT = [START_DATE, END_DATE, TEXT]
     bot.send_message(message.chat.id, f"Событие '{EVENT[-1]}' установлено с {EVENT[0]} по {EVENT[1]}")
@@ -270,6 +271,7 @@ def time_save_event(message):
 
 #функция обработки введенного промежутка между повторами
 def day_interval(message):
+    global FINISH, START_TIME, END_TIME
     num = message.text
     delta = FINISH.date() - END_DATE.date()
     origin_delta = END_DATE - START_DATE
@@ -283,12 +285,9 @@ def day_interval(message):
             event = [new_start, new_end, TEXT, True]
             EVENTS.append(event)
         bot.send_message(message.chat.id, f"Все повторы данного события и само событие зафиксированы. Всего их получилось {len(EVENTS)}")
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        button1 = types.KeyboardButton("да")
-        button2 = types.KeyboardButton("нет")
-        markup.add(button1, button2)
-        bot.send_message(message.chat.id, "Осталось немного). Данное событие допускает вложенность?",reply_markup=markup)
-        bot.register_next_step_handler(message, embedding)
+        EVENTS.clear()
+        START_TIME, END_TIME, FINISH = None, None, None
+        keyboard(message)
     else:
         bot.send_message(message.chat.id, "Вы ввели не натуральное число или большее, чем количество дней между концом события и днем последнего повторения. Повторите попытку")
         bot.register_next_step_handler(message, day_interval)
@@ -296,69 +295,21 @@ def day_interval(message):
 
 #функция определения цикличности события
 def looping(message):
-    answer = message.text
+    global START_TIME, END_TIME, FINISH
+    answer = message.text.lower()
     if answer == "да":
         dt = END_DATE + datetime.timedelta(days=1)
         bot.send_message(message.chat.id, "До какого дня нужно повторять событие (включительно)?", reply_markup=data_calendar.create_calendar(None, None, dt))
     elif answer == "нет":
         EVENT.append(None)
         EVENTS.append(EVENT)
-        bot.send_message(message.chat.id, "Данное событие допускает вложенность?")
-        bot.register_next_step_handler(message, embedding)
+        EVENTS.clear()
+        START_TIME, END_TIME, FINISH = None, None, None
+        bot.send_message(message.chat.id, "Событие успешно создано")
+        keyboard(message)
     else:
         bot.send_message(message.chat.id, "Выберите или введите да/нет для продолжения")
         bot.register_next_step_handler(message, looping)
-
-
-#функция определения вложенности события
-def embedding(message):
-    global START_TIME, END_TIME
-    START_TIME, END_TIME, FINISH = None, None, None
-    answer = message.text
-    if answer == "да":
-        bot.send_message(message.chat.id, "Принял, тогда введите число уровней вложенности", reply_markup=None)
-        bot.register_next_step_handler(message, levels_of_embedding)
-    elif answer == "нет":
-        if None in EVENT:
-            EVENT.append(None)
-            EVENTS.append(EVENT)
-            bot.send_message(message.chat.id, f"Тогда всё) Событие '{EVENT[2]}' с {EVENT[0]} по {EVENT[1]} успешно создано. (не является циклическим и не имеет вложенности)")
-        else:
-            EVENT.append(None)
-            EVENTS.append(EVENT)
-            bot.send_message(message.chat.id,
-                             f"Тогда всё) Событие '{EVENT[2]}' с {EVENT[0]} по {EVENT[1]} успешно создано. (является циклическим и не имеет вложенности)")
-        EVENTS.clear()
-        bot.send_message(message.chat.id, 'Хотите получить напоминание о данном событии?')
-        bot.register_next_step_handler(message, notification)
-    else:
-        bot.send_message(message.chat.id, "Выберите или введите да/нет для продолжения")
-        bot.register_next_step_handler(message, embedding)
-
-
-#функция, фиксирующая количество уровней вложенности события и собирающая полную инфу про событие
-def levels_of_embedding(message):
-    num = message.text
-    if (num.isdigit() and int(num) > 0):
-        bot.send_message(message.chat.id, "Хорошо")
-        for i in range(len(EVENTS)):
-            if EVENT[2] == EVENTS[i][2]:
-                EVENTS[i].append(int(num))
-                EVENTS[i] = tuple(EVENTS[i])
-            else:
-                pass
-        if None in EVENTS[0]:
-            bot.send_message(message.chat.id,
-                             f"Тогда всё) Событие '{EVENT[2]}' с {EVENT[0]} по {EVENT[1]} успешно создано. (не является циклическим и имеет вложенность)")
-        else:
-            bot.send_message(message.chat.id,
-                             f"Тогда всё) Событие '{EVENT[2]}' с {EVENT[0]} по {EVENT[1]} успешно создано. (является циклическим и имеет вложенность)")
-        EVENTS.clear()
-        bot.send_message(message.chat.id, 'Хотите получить напоминание о данном событии?')
-        bot.register_next_step_handler(message, notification)
-    else:
-        bot.send_message(message.chat.id, "Вы ввели некорректное значение. Повторите попытку")
-        bot.register_next_step_handler(message, levels_of_embedding)
 
 
 #функция, для установки даты и времени напоминания
@@ -454,6 +405,19 @@ def naming(message):
     global NAME
     NAME = message.text
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    button1 = types.KeyboardButton("Срочные важные")
+    button2 = types.KeyboardButton("Несрочные важные")
+    button3 = types.KeyboardButton("Срочные неважные")
+    button4 = types.KeyboardButton("Несрочные неважные")
+    markup.add(button1, button2, button3, button4)
+    bot.send_message(message.chat.id, "Выберите категорию события", reply_markup=markup)
+    bot.register_next_step_handler(message, loop_define)
+
+
+def loop_define(message):
+    global TYPE
+    TYPE = message.text
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     button1 = types.KeyboardButton("да")
     button2 = types.KeyboardButton("нет")
     markup.add(button1, button2)
@@ -464,16 +428,16 @@ def naming(message):
 EVENTS_DP_DATE = []
 #функция определения цикличности
 def looping_date(message):
-    global EVENT_DP_DATE
+    global EVENT_DP_DATE, DATE_EVENT
     answer = message.text.lower()
     if answer == "да":
         dt = DATE_EVENT + datetime.timedelta(days=1)
         bot.send_message(message.chat.id, "До какого дня нужно повторять событие (включительно)?",
                          reply_markup=data_calendar.create_calendar(None, None, dt))
     elif answer == "нет":
-        EVENT_DP_DATE = (DATE_EVENT, NAME, None)
+        EVENT_DP_DATE = (DATE_EVENT, NAME, TYPE, None)
         EVENTS_DP_DATE.append(EVENT_DP_DATE)
-        bot.send_message(message.chat.id, f"Событие {NAME} записано на {DATE_EVENT}")
+        bot.send_message(message.chat.id, f"Событие {NAME} записано на {DATE_EVENT.date()}")
         EVENTS_DP_DATE.clear()
         keyboard(message)
     else:
@@ -487,10 +451,10 @@ def day_interval_for_date(message):
     delta = FINISH - DATE_EVENT
     if (num.isdigit() and int(num) > 0 and datetime.timedelta(days=int(num)) <= delta):
         new_date = DATE_EVENT
-        EVENTS_DP_DATE = [(NAME, DATE_EVENT, True)]
+        EVENTS_DP_DATE = [(DATE_EVENT, NAME, TYPE, True)]
         while new_date < FINISH:
             new_date += datetime.timedelta(days=int(num))
-            EVENT_DP_DATE = (NAME, new_date, True)
+            EVENT_DP_DATE = (new_date, NAME, TYPE, True)
             EVENTS_DP_DATE.append(EVENT_DP_DATE)
         bot.send_message(message.chat.id,
                          f"Все повторы данного события, а также и само событие зафиксированы. Всего их получилось {len(EVENTS_DP_DATE)}")
