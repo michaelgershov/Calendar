@@ -65,11 +65,11 @@ def help(message):
 #функция клавиатуры опций
 def keyboard(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    button1 = types.KeyboardButton("события")
-    button2 = types.KeyboardButton("приоритеты")
+    button1 = types.KeyboardButton("расписание на сегодня")
+    button2 = types.KeyboardButton("в планах")
     button3 = types.KeyboardButton("статистика")
-    button4 = types.KeyboardButton("добавить")
-    button5 = types.KeyboardButton("окна")
+    button4 = types.KeyboardButton("добавить событие")
+    button5 = types.KeyboardButton("свободные окна")
     button6 = types.KeyboardButton("выход")
     markup.add(button1, button2, button3, button4, button5, button6)
     bot.send_message(message.chat.id, "Выберите опцию из меню", reply_markup=markup)
@@ -83,7 +83,7 @@ def keyboard(message):
 #функция обработки выбора опций
 def selection(message):
     sel = message.text.lower()
-    if sel == "добавить":
+    if sel == "добавить событие":
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         button1 = types.KeyboardButton("фиксированное")
         button2 = types.KeyboardButton("датированное")
@@ -91,6 +91,20 @@ def selection(message):
         markup.add(button1, button2, button3)
         bot.send_message(message.chat.id, "Выберите нужный тип события", reply_markup=markup)
         bot.register_next_step_handler(message, type_of_event)
+    elif sel == "в планах":
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("дневные")
+        button2 = types.KeyboardButton("общие")
+        markup.add(button1, button2)
+        bot.send_message(message.chat.id, "Какие события вы хотели бы просмотреть?", reply_markup=markup)
+        bot.register_next_step_handler(message, priorities)
+    elif sel == "свободные окна":
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("на день")
+        button2 = types.KeyboardButton("на месяц")
+        markup.add(button1, button2)
+        bot.send_message(message.chat.id, "На сколько большое окно вам необходимо?", reply_markup=markup)
+        bot.register_next_step_handler(message, free_windows)
     else:
         bot.send_message(message.chat.id, "Ошибка. Выберите опцию из указанного меню")
         bot.register_next_step_handler(message, selection)
@@ -148,7 +162,7 @@ def handle_callback(call):
                                            f"Вы выбрали дату {FINISH.date()}. Введите количество дней в промежутке между повторами",
                                            reply_markup=None)
                     bot.register_next_step_handler(msg, day_interval)
-            else:
+            elif MARK_1 == 1:
                 if DATE_EVENT is None:
                     DATE_EVENT = RET_DATA
                     msg = bot.send_message(call.message.chat.id, f"Вы выбрали дату {DATE_EVENT.date()}. Теперь введите название события", reply_markup=None)
@@ -159,6 +173,14 @@ def handle_callback(call):
                                            f"Вы выбрали дату {FINISH.date()}. Введите количество дней в промежутке между повторами",
                                            reply_markup=None)
                     bot.register_next_step_handler(msg, day_interval_for_date)
+            elif MARK_1 == 2:
+                DATE_EVENT = RET_DATA
+                msg = bot.send_message(call.message.chat.id, f"Вы выбрали дату {DATE_EVENT.date()}")
+                search_for_date(msg)
+            elif MARK_1 == 3:
+                DATE_EVENT = RET_DATA
+                msg = bot.send_message(call.message.chat.id, f"Вы выбрали дату {DATE_EVENT.date()}")
+                search_free_window(msg)
 
         elif action == "Пред-месяц":
             pre = curr - datetime.timedelta(days=1)
@@ -287,7 +309,8 @@ def day_interval(message):
         bot.send_message(message.chat.id, f"Все повторы данного события и само событие зафиксированы. Всего их получилось {len(EVENTS)}")
         EVENTS.clear()
         START_TIME, END_TIME, FINISH = None, None, None
-        keyboard(message)
+        bot.send_message(message.chat.id, 'Хотите получить напоминание о данном событии?')
+        bot.register_next_step_handler(message, notification)
     else:
         bot.send_message(message.chat.id, "Вы ввели не натуральное число или большее, чем количество дней между концом события и днем последнего повторения. Повторите попытку")
         bot.register_next_step_handler(message, day_interval)
@@ -306,7 +329,8 @@ def looping(message):
         EVENTS.clear()
         START_TIME, END_TIME, FINISH = None, None, None
         bot.send_message(message.chat.id, "Событие успешно создано")
-        keyboard(message)
+        bot.send_message(message.chat.id, 'Хотите получить напоминание о данном событии?')
+        bot.register_next_step_handler(message, notification)
     else:
         bot.send_message(message.chat.id, "Выберите или введите да/нет для продолжения")
         bot.register_next_step_handler(message, looping)
@@ -397,7 +421,7 @@ def exit_independent(message):
 # ОБРАБОТКА СОБЫТИЯ, ЗАВИСИМОГО ТОЛЬКО ОТ ДАТЫ
 #######################################################################################################################
 def depending_from_date(message):
-    bot.send_message(message.chat.id, "Выберите дату события", reply_markup=data_calendar.create_calendar(None, None, 1))
+    bot.send_message(message.chat.id, "Выберите дату", reply_markup=data_calendar.create_calendar(None, None, 1))
 
 
 #функция определения названия события
@@ -463,6 +487,88 @@ def day_interval_for_date(message):
     else:
         bot.send_message(message.chat.id, "Ошибка. Введите корректное натуральное число")
         bot.register_next_step_handler(message, day_interval_for_date)
+#######################################################################################################################
+
+
+#######################################################################################################################
+# ПРОСМОТР СОБЫТИЙ, НЕЗАВИСИМЫХ ОТ ВРЕМЕНИ
+#######################################################################################################################
+#функция обработки просмотра событий
+def priorities(message):
+    global MARK_1, DATE_EVENT  # MARK_1 здесь и в окнах используется для того, чтобы выводить нужный календарь
+    answer = message.text.lower()
+    if answer == "дневные":
+        MARK_1 = 2
+        DATE_EVENT = None
+        depending_from_date(message)
+    elif answer == "общие":
+        bot.send_message(message.chat.id, "Следующие события ждут своего свершения) :", reply_markup=None)
+        keyboard(message)
+    else:
+        bot.send_message(message.chat.id, "Ошибка. Выберите повторно")
+        bot.register_next_step_handler(message, priorities)
+
+
+#функция поиска событий, установленных на указанный день
+def search_for_date(message):
+    global DATE_EVENT             # DATE_EVENT - хранит дату, которую пользователь выбрал для просмотра, в конце обязательно присвоить None
+    bot.send_message(message.chat.id, "На данное число у вас запланированы следующие события:", reply_markup=None)
+    DATE_EVENT = None
+    keyboard(message)
+#######################################################################################################################
+
+
+#######################################################################################################################
+# ПРОСМОТР СВОБОДНЫХ ОКОН
+#######################################################################################################################
+#функция выбора типа окна
+def free_windows(message):
+    global MARK_1, DATE_EVENT
+    answer = message.text.lower()
+    if answer == "на день":
+        MARK_1 = 3
+        DATE_EVENT = None
+        depending_from_date(message)
+    elif answer == "на месяц":
+        bot.send_message(message.chat.id, "Введите интересующий Вас год", reply_markup=None)
+        bot.register_next_step_handler(message, year_for_window)
+    else:
+        bot.send_message(message.chat.id, "Ошибка. Повторите ввод/выбор")
+        bot.register_next_step_handler(message, free_windows)
+
+
+#функция поиска окон в указанный день
+def search_free_window(message):
+    global DATE_EVENT   # DATE_EVENT выполняет ту же функцию, что и ранее
+    bot.send_message(message.chat.id, "На данный день у вас есть следующие свободные окна:")
+    DATE_EVENT = None
+    keyboard(message)
+
+
+#функция проверки введенного года
+def year_for_window(message):
+    global YEAR
+    year = message.text
+    if year.isdigit() and (datetime.datetime.now().year <= int(year) < 2100):
+        YEAR = int(year)
+        bot.send_message(message.chat.id, "Отлично, теперь введите номер интересующего Вас месяца")
+        bot.register_next_step_handler(message, month_for_window)
+    else:
+        bot.send_message(message.chat.id, "Введите корректный год")
+        bot.register_next_step_handler(message, year_for_window)
+
+
+#функция проверки введенного месяца
+def month_for_window(message):
+    global MONTH, YEAR
+    month = message.text
+    if month.isdigit() and (datetime.datetime.now().month <= int(month) < 13):
+        MONTH = int(month)
+        bot.send_message(message.chat.id, "Хорошо. На данный месяц у Вас заняты следующие даты:")
+        keyboard(message)
+    else:
+        bot.send_message(message.chat.id, "Введите корректный месяц")
+        bot.register_next_step_handler(message, month_for_window)
 #######################################################################################################################
 
 
