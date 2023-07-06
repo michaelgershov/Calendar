@@ -5,6 +5,10 @@ from telebot import types
 import data_calendar
 import mysqlconnector as db
 from multiprocessing import freeze_support
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
+
 
 freeze_support()
 
@@ -252,15 +256,34 @@ def req(now, message):
 
     get_today_events_2 = f"""
     SELECT BeginTime, EndTime, Event
-    FROM plans
-    WHERE (idUser={ID_USER})
-    AND (BeginTime BETWEEN '{now}' AND '{tomorrow}')
+    FROM 
+        plans
+    WHERE 
+        (idUser={ID_USER})
+    AND 
+        ((BeginTime BETWEEN '{now}' AND '{tomorrow}')
+    OR
+        (EndTime BETWEEN '{now}' AND '{tomorrow}')
+    OR
+        (BeginTime<'{now}' AND EndTime>'{tomorrow}'))
     """
     today_events_2 = db.execute_read_query(connection, get_today_events_2)
-    for event in today_events_2:
-        events[5] += (event[0].strftime('%H:%M') + "-" + event[1].strftime('%H:%M') + " - " + event[2] + "\n")
-    msg = bot.send_message(message.chat.id,
-        f"Мои события на {now.strftime('%d.%m.%Y')}:\n{events[1]}\n{events[2]}\n{events[3]}\n{events[4]}\n{events[5]}")
+    try:
+        today_events_20 = sorted(today_events_2, key=lambda i: i[0])
+        for event in today_events_20:
+            events[5] += (event[0].strftime('%d.%m %H:%M') + "-" + event[1].strftime('%d.%m %H:%M') + " - " + event[2] + "\n")
+    except Exception:
+        ...
+    n = 0
+    for i in range(1,6):
+        if events[i] == "Срочные важные:\n" or events[i] == "Несрочные важные:\n" or events[i] == "Срочные неважные:\n" or events[i] == "Несрочные неважные:\n" or events[i] == "\n":
+             events[i] = ""
+             n += 1
+    if n == 5:
+        msg = bot.send_message(message.chat.id, "Нет событий на выбранную дату.")
+    else:
+        msg = bot.send_message(message.chat.id,
+            f"Мои события на {now.strftime('%d.%m.%Y')}:\n\n{events[1]}{events[2]}{events[3]}{events[4]}{events[5]}")
     keyboard(msg)
 
 CLICK = None
@@ -284,7 +307,7 @@ def my_events(message):
         AND (BeginTime IS NULL)
         """
         indep_events = db.execute_read_query(connection, get_indep_events)
-        events = {1: "Срочные и важные:\n", 2: "Несрочные и важные:\n", 3: "Срочные неважные:\n", 4: "Несрочные неважные:\n"}
+        events = {1: "Срочные важные:\n", 2: "Несрочные важные:\n", 3: "Срочные неважные:\n", 4: "Несрочные неважные:\n"}
         for event in indep_events:
             if event[0] == "срочное важное":
                 events[1] += (event[1] + "\n ")
@@ -294,8 +317,16 @@ def my_events(message):
                 events[3] += (event[1] + "\n ")
             elif event[0] == "несрочное неважное":
                 events[4] += (event[1] + "\n ")
-        bot.send_message(message.chat.id,
-            f"Мои независимые события:\n{events[1]}\n{events[2]}\n{events[3]}\n{events[4]}")
+        n = 0
+        for i in range(1,5):
+            if events[i] == "Срочные важные:\n" or events[i] == "Несрочные важные:\n" or events[i] == "Срочные неважные:\n" or events[i] == "Несрочные неважные:\n":
+                events[i] = ""
+                n += 1
+        if n == 4:
+            bot.send_message(message.chat.id, "Нет событий.")
+        else:
+            bot.send_message(message.chat.id,
+                f"Мои независимые события:\n\n{events[1]}{events[2]}{events[3]}{events[4]}")
     # заглушка для перезагрузки бота
     elif message.text == "/start":
         start_message(message)
@@ -314,23 +345,61 @@ def my_events(message):
 #######################################################################################################################
 # ВЫВОД СТАТИСТИКИ ЗА НЕДЕЛЮ
 #######################################################################################################################
+def photo(y, monday, now, send_str, message):
+    if len(y) != 0:
+        x = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'][:len(y)]
+        plt.bar(x, y)
+        plt.xlabel('День недели')
+        plt.ylabel('Количество поставленных задач')
+        plt.title(f"{monday.strftime('%d.%m.%Y %H:%M')} - {now.strftime('%d.%m.%Y %H:%M')}")
+        plt.savefig('saved_figure.jpg')
+        bot.send_photo(message.chat.id, photo=open('saved_figure.jpg', 'rb'), caption=send_str)
+    else:
+        bot.send_message(message.chat.id, send_str)
+
+def from_two_to_one(event1, event2):
+    if event1[0] == event2[0] and event1[1] <= event2[1]:
+        return event2
+    elif event1[0] == event2[0] and event1[1] > event2[1]:
+        return event1
+    elif event1[1] < event2[0]:
+        return None
+    elif event1[0] < event2[0] and event1[1] >= event2[0] and event1[1] < event2[1]:
+        return (event1[0],event2[1])
+    elif event1[0] < event2[0] and event1[1] >= event2[1]:
+        return event1
+
+def modifed_events(events_in: list) -> list:
+    events = events_in.copy()
+    intermed_list = list()
+    answers = list()
+    for i in range(len(events)):
+        for j in range(i + 1, len(events)):
+            answer = from_two_to_one(events[i], events[j])
+            if answer is None:
+                pass
+            else:
+                if answer not in answers:
+                    answers.append(answer)
+                if events[i] not in intermed_list:
+                    intermed_list.append(events[i])
+                if events[j] not in intermed_list:
+                    intermed_list.append(events[j])
+    for event in intermed_list:
+        if event in events:
+            events.remove(event)
+    for answer in answers:
+        events.append(answer)
+    events.sort(key=lambda x: x[0])
+    return events
+
 def statistics(message):
+    global ID_USER
     now = datetime.datetime.now()
-    yesterday = now - datetime.timedelta(days=1)
-    yesterday = yesterday.replace(hour=23, minute=59, second=59, microsecond=0)
-    sunday = now - datetime.timedelta(days=now.isoweekday())
-    sunday = sunday.replace(hour=23, minute=59, second=59, microsecond=0)
-    now = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    monday = now - datetime.timedelta(days=now.weekday())
+    monday = monday.replace(hour=0, minute=0, second=0, microsecond=0)
+    y = [0,0,0,0,0,0,0][:now.isoweekday()]
     depend_ints = {"Срочные важные":0, "Несрочные важные":0, "Срочные неважные":0, "Несрочные неважные":0}
-    get_id = f"""
-        SELECT 
-            id
-        FROM
-            users
-        WHERE
-            Login='{LOGIN}' LIMIT 1
-        """
-    id_user = int(db.execute_read_query(connection, get_id)[0][0])
 
     #дата и время
     plans_time = f"""
@@ -339,18 +408,49 @@ def statistics(message):
         FROM
             plans
         WHERE
-            (idUser={id_user})
+            (idUser={ID_USER})
         AND
-            (BeginTime BETWEEN '{sunday}' AND '{yesterday}')
-        AND
-            (EndTime BETWEEN '{sunday}' AND '{now}')
+            ((BeginTime BETWEEN '{monday}' AND '{now}')
+        OR
+            (EndTime BETWEEN '{monday}' AND '{now}')
+        OR
+            (BeginTime<'{monday}' AND EndTime>'{now}'))
         """
     stat_time = db.execute_read_query(connection, plans_time)
     total = now-now
     for s in stat_time:
-        total += s[1]-s[0]
-        # print(s, '\n')
-    str1 = f"Статистика\n\nЗагруженность недели: {(total/(now-sunday)*100).__round__(2)}%"
+        if s[0] >= monday and s[1] <= now:
+            for i in range(s[1].toordinal()-s[0].toordinal()+1):
+                y[s[0].weekday()+i] += 1
+        elif s[0] < monday and s[1] > now:
+            for i in range(now.toordinal()-monday.toordinal()+1):
+                y[i] += 1
+        elif s[0] >= monday:
+            for i in range(now.toordinal()-s[0].toordinal()+1):
+                y[s[0].weekday()+i] += 1
+        elif s[1] <= now:
+            for i in range(s[1].toordinal()-monday.toordinal()+1):
+                y[i] += 1
+
+    events = sorted(stat_time, key=lambda i: i[0])
+    while True:
+        mod_events = modifed_events(events)
+        if set(map(tuple, mod_events)) == set(map(tuple, events)):
+            break
+        else:
+            events = mod_events
+
+    for s in mod_events:
+        if s[0] >= monday and s[1] <= now:
+            total += s[1]-s[0]
+        elif s[0] < monday and s[1] > now:
+            total = now-monday
+            break
+        elif s[0] >= monday:
+            total += now-s[0]
+        elif s[1] <= now:
+            total += s[1]-monday
+    str1 = f"Статистика\n\nЗагруженность недели: {(total/(now-monday)*100).__round__(2)}%"
 
     #дата
     plans_date = f"""
@@ -359,28 +459,27 @@ def statistics(message):
         FROM
             plans
         WHERE
-            (idUser={id_user})
+            (idUser={ID_USER})
         AND
-            (DateEvent BETWEEN '{sunday}' AND '{yesterday}')
+            (DateEvent BETWEEN '{monday}' AND '{now}')
         """
     stat_date = db.execute_read_query(connection, plans_date)
     for s in stat_date:
         if s[0] == "срочное важное":
             depend_ints["Срочные важные"] += 1
-        if s[0] == "несрочное важное":
+        elif s[0] == "несрочное важное":
             depend_ints["Несрочные важные"] += 1
-        if s[0] == "срочное неважное":
+        elif s[0] == "срочное неважное":
             depend_ints["Срочные неважные"] += 1
-        if s[0] == "несрочное неважное":
+        elif s[0] == "несрочное неважное":
             depend_ints["Несрочные неважные"] += 1
-        # print(s, '\n')
+        y[s[1].weekday()] += 1
     str2 = f"\n\nВсего событий неопределённой длительности за неделю: {len(stat_date)}"
     str22 = ""
     for di in depend_ints.items():
         str22 += f"\n{di[0]}: {di[1]}"
     for k in depend_ints.keys():
         depend_ints[k] = 0
-    print("\n")
 
     #ничего
     plans_nth = f"""
@@ -389,7 +488,7 @@ def statistics(message):
     FROM
         plans
     WHERE
-        (idUser={id_user})
+        (idUser={ID_USER})
     AND
         (DateEvent IS NULL)
     AND
@@ -399,18 +498,19 @@ def statistics(message):
     for s in stat_nth:
         if s[0] == "срочное важное":
             depend_ints["Срочные важные"] += 1
-        if s[0] == "несрочное важное":
+        elif s[0] == "несрочное важное":
             depend_ints["Несрочные важные"] += 1
-        if s[0] == "срочное неважное":
+        elif s[0] == "срочное неважное":
             depend_ints["Срочные неважные"] += 1
-        if s[0] == "несрочное неважное":
+        elif s[0] == "несрочное неважное":
             depend_ints["Несрочные неважные"] += 1
-        # print(s, '\n')
     str3 = f"\n\nВсего событий без привязки к дате и времени: {len(stat_nth)}"
     str32 = ""
     for di in depend_ints.items():
         str32 += f"\n{di[0]}: {di[1]}"
-    bot.send_message(message.chat.id, str1+str2+str22+str3+str32)
+        
+    #график
+    photo(y, monday, now, str1+str2+str22+str3+str32, message)
     keyboard(message)
 #######################################################################################################################
 
