@@ -33,7 +33,7 @@ CREATE TABLE `plans` (
   `Enclosure` tinyint DEFAULT '1',
   `Reminder` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `idUser_UNIQUE` (`idUser`),
+  KEY `fk_delUser` (`idUser`),
   CONSTRAINT `fk_delUser` FOREIGN KEY (`idUser`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -56,8 +56,8 @@ DROP TABLE IF EXISTS `users`;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `users` (
   `id` int NOT NULL AUTO_INCREMENT,
-  `login` varchar(30) NOT NULL,
-  `password` int NOT NULL,
+  `login` varchar(32) NOT NULL,
+  `password` bigint NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `login_UNIQUE` (`login`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
@@ -85,4 +85,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2023-07-01 14:50:26
+-- Dump completed on 2023-07-01 20:30:23

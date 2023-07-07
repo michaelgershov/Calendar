@@ -61,6 +61,7 @@ def answering(message):
         start_message(message)
     elif text == "/help":
         help_bot(message)
+        start_message(message)
     else:
         bot.send_message(message.chat.id, "Проверьте корректность введённой команды или используйте кнопки.")
         bot.register_next_step_handler(message, answering)
@@ -78,6 +79,8 @@ def user_answer(message):
         start_message(message)
     elif ans == "/help":
         help_bot(message)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (сделайте правильный выбор).")
+        bot.register_next_step_handler(message, user_answer)
     else:
         bot.send_message(message.chat.id, "Проверьте корректность введённой команды или используйте кнопки.")
         bot.register_next_step_handler(message, user_answer)
@@ -85,23 +88,28 @@ def user_answer(message):
 def create_login(message):
     global LOGIN
     LOGIN = message.text.lower()
-    check_login = f"""
-    SELECT 
-    EXISTS (SELECT 
-    Login FROM users WHERE Login='{LOGIN}' LIMIT 1)
-    """
-    if db.execute_read_query(connection, check_login)[0][0] != 1:
-        bot.send_message(message.chat.id, "Введите пароль (не менее 8 символов).", reply_markup=None)
-        bot.register_next_step_handler(message, password)
-    # заглушка для перезагрузки бота
-    elif message.text == "/start" or message.text == "/back":
-        start_message(message)
-    elif message.text == "/help":
-        help_bot(message)
+    if len(LOGIN) <= 32:
+        check_login = f"""
+        SELECT 
+        EXISTS (SELECT 
+        Login FROM users WHERE Login='{LOGIN}' LIMIT 1)
+        """
+        # заглушка для перезагрузки бота
+        if message.text == "/start" or message.text == "/back":
+            start_message(message)
+        elif message.text == "/help":
+            help_bot(message)
+            bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (введите имя пользователя).")
+            bot.register_next_step_handler(message, create_login)
+        elif db.execute_read_query(connection, check_login)[0][0] != 1:
+            bot.send_message(message.chat.id, "Введите пароль (A-Z..a-z..1-9.. от 8 до 16 символов).", reply_markup=None)
+            bot.register_next_step_handler(message, password)
+        else:
+            msg = bot.send_message(message.chat.id, "Пользователь с таким именем уже существует. Попробуйте снова.")
+            bot.register_next_step_handler(msg, create_login)
     else:
-        msg = bot.send_message(message.chat.id, "Пользователь с таким именем уже существует. Попробуйте снова.")
-        bot.register_next_step_handler(msg, login)
-
+        msg = bot.send_message(message.chat.id, "Длина введённого имени пользователя превышает 32 символа. Попробуйте снова.")
+        bot.register_next_step_handler(msg, create_login)
 
 def login(message):
     global LOGIN
@@ -119,6 +127,8 @@ def login(message):
         start_message(message)
     elif message.text == "/help":
         help_bot(message)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (введите пароль).")
+        bot.register_next_step_handler(message, login)
     else:
         msg = bot.send_message(message.chat.id, "Пользователя не существует. Попробуйте снова.")
         bot.register_next_step_handler(msg, login)
@@ -133,13 +143,16 @@ def password_check(message):
     Password FROM users WHERE Login='{LOGIN}' LIMIT 1
     """
     if db.execute_read_query(connection, get_pas)[0][0] == hex_dig:
+        bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
         bot.send_message(message.chat.id, f"Вход выполнен!")
         keyboard(message)
     # заглушка для перезагрузки бота
-    elif message.text == "/start" or message.text == "/back":
+    elif pas == "/start" or pas == "/back":
         start_message(message)
-    elif message.text == "/help":
+    elif pas == "/help":
         help_bot(message)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (введите пароль).")
+        bot.register_next_step_handler(message, password_check)
     else:
         msg = bot.send_message(message.chat.id, "Неверный пароль. Попробуйте снова.")
         bot.register_next_step_handler(msg, password_check)
@@ -148,8 +161,9 @@ def password_check(message):
 def password(message):
     global LOGIN
     pas = message.text
-    pattern1 = re.compile(r"(?=.*[a-z])(?=.*[A-Z])[a-zA-Z\d]{8,}$")
+    pattern1 = re.compile(r"(?=.*[a-z])(?=.*[A-Z])[a-zA-Z\d]{8,16}$")
     if pattern1.fullmatch(pas) is not None:
+        bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
         hash_object = hashlib.sha256(pas.encode())
         hex_dig = hash_object.hexdigest()
         create_user = f"""
@@ -162,10 +176,12 @@ def password(message):
         bot.send_message(message.chat.id, f"Отличный пароль!\nУчётная запись для {LOGIN} создана.")
         keyboard(message)
         # заглушка для перезагрузки бота
-    elif message.text == "/start" or message.text == "/back":
+    elif pas == "/start" or pas == "/back":
         start_message(message)
-    elif message.text == "/help":
+    elif pas == "/help":
         help_bot(message)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (введите пароль).")
+        bot.register_next_step_handler(message, password)
     else:
         msg = bot.send_message(message.chat.id,
                                "Введённый пароль не соответствует стандартам. Введите пароль повторно.")
@@ -180,15 +196,33 @@ def password(message):
 #######################################################################################################################
 @bot.message_handler(commands=["option"])
 def option(message):
+    global START_TIME, END_TIME, FINISH, START_DATE, END_DATE, MARK_1, MARK_3
+    START_TIME, END_TIME, START_DATE, END_DATE, MARK_1, MARK_3, FINISH = None, None, None, None, None, None, None
     keyboard(message)
 
 
 @bot.message_handler(commands=["help"])
 def help_bot(message):
-    bot.send_message(message.from_user.id, 'Список всех доступных команд: ')
-
+    global FLAG
+    if FLAG is None:
+        bot.send_message(message.from_user.id,
+        "Данный бот предназначен для работы с Вашими событиями. Здесь можно создать событие, редактировать и удалять его. Также есть возможность просмотреть все заданные события и установить напоминания на нужные. \n \n !Для успешной работы бота внимательно соблюдайте последовательность действий и отправляйте сообщения боту в виде, котором он просит! \n \n Список всех доступных команд: \n /start - перезапускает работу бота \n /help - предоставляет возможность просмотреть все доступные команды \n /option - открывает клавиатуру для выбора нужной опции работы бота \n /back - команда для возвращения к предыдущему шагу \n \n Удачной работы!")
+        bot.send_message(message.chat.id, "Выберите дату")
+    elif FLAG == 1:
+        bot.send_message(message.from_user.id,
+        "Данный бот предназначен для работы с Вашими событиями. Здесь можно создать событие, редактировать и удалять его. Также есть возможность просмотреть все заданные события и установить напоминания на нужные. \n \n !Для успешной работы бота внимательно соблюдайте последовательность действий и отправляйте сообщения боту в виде, котором он просит! \n \n Список всех доступных команд: \n /start - перезапускает работу бота \n /help - предоставляет возможность просмотреть все доступные команды \n /option - открывает клавиатуру для выбора нужной опции работы бота \n /back - команда для возвращения к предыдущему шагу \n \n Удачной работы!")
+        bot.send_message(message.chat.id, "Выберите дату")
+    elif FLAG == -1:
+        bot.send_message(message.from_user.id,
+        "Данный бот предназначен для работы с Вашими событиями. Здесь можно создать событие, редактировать и удалять его. Также есть возможность просмотреть все заданные события и установить напоминания на нужные. \n \n !Для успешной работы бота внимательно соблюдайте последовательность действий и отправляйте сообщения боту в виде, котором он просит! \n \n Список всех доступных команд: \n /start - перезапускает работу бота \n /help - предоставляет возможность просмотреть все доступные команды \n /option - открывает клавиатуру для выбора нужной опции работы бота \n /back - команда для возвращения к предыдущему шагу \n \n Удачной работы!")
+    # else:
+    #     bot.send_message(message.from_user.id,
+    #     "Данный бот предназначен для работы с Вашими событиями. Здесь можно создать событие, редактировать и удалять его. Также есть возможность просмотреть все заданные события и установить напоминания на нужные. \n \n !Для успешной работы бота внимательно соблюдайте последовательность действий и отправляйте сообщения боту в виде, котором он просит! \n \n Список всех доступных команд: \n /start - перезапускает работу бота \n /help - предоставляет возможность просмотреть все доступные команды \n /option - открывает клавиатуру для выбора нужной опции работы бота \n /back - команда для возвращения к предыдущему шагу \n \n Удачной работы!")
+        
 
 def keyboard(message):
+    global FLAG
+    FLAG = -1
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     button1 = types.KeyboardButton("Мои события")
     button2 = types.KeyboardButton("Редактировать событие")
@@ -216,8 +250,8 @@ def selection(message):
     """
     ID_USER = db.execute_read_query(connection, get_id)[0][0]
 
-    sel = message.text
-    if sel.lower() == "мои события":
+    sel = message.text.lower()
+    if sel == "мои события":
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         button1 = types.KeyboardButton("На сегодня")
         button2 = types.KeyboardButton("На выбранный день")
@@ -226,7 +260,7 @@ def selection(message):
         bot.send_message(message.chat.id, "События какого типа вы желаете увидеть?", reply_markup=markup)
         bot.register_next_step_handler(message, my_events)
 
-    elif sel.lower() == "редактировать событие":
+    elif sel == "редактировать событие":
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         button1 = types.KeyboardButton("Фиксированное")
         button3 = types.KeyboardButton("Независимое")
@@ -234,10 +268,10 @@ def selection(message):
         bot.send_message(message.chat.id, "Выберите нужный тип события", reply_markup=markup)
         bot.register_next_step_handler(message, edit_events)
 
-    elif sel.lower() == "статистика":
+    elif sel == "статистика":
         statistics(message)
 
-    elif sel.lower() == "добавить событие":
+    elif sel == "добавить событие":
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         button1 = types.KeyboardButton("Дата и время")
         button2 = types.KeyboardButton("Только дата")
@@ -248,23 +282,25 @@ def selection(message):
                          reply_markup=markup)
         bot.register_next_step_handler(message, type_of_event)
 
-    elif sel.lower() == "свободные окна":
+    elif sel == "свободные окна":
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         button1 = types.KeyboardButton("На день")
         button2 = types.KeyboardButton("На месяц")
         markup.add(button1, button2)
-        bot.send_message(message.chat.id, "Выберите интересующий вас отрезок времени.", reply_markup=markup)
+        bot.send_message(message.chat.id, "Выберите интересующий Вас отрезок времени.", reply_markup=markup)
         bot.register_next_step_handler(message, free_windows)
 
-    elif sel.lower() == "выход":
+    elif sel == "выход":
         bot.send_message(message.chat.id, f"Вы вышли из учётной записи.")
         start_message(message)
 
-    # заглушка для перезагрузки бота
     elif message.text == "/start":
         start_message(message)
     elif message.text == "/help":
         help_bot(message)
+        keyboard(message)
+    elif message.text == "/option" or message.text == "/back":
+        keyboard(message)
     else:
         msg = bot.send_message(message.chat.id, "Проверьте корректность введённой команды или используйте кнопки.")
         bot.register_next_step_handler(msg, selection)
@@ -277,20 +313,20 @@ def selection(message):
 # ОБРАБОТКА ВЫБОРА ТИПА СОБЫТИЯ
 #######################################################################################################################
 
-MARK_1, MARK_3 = None, None
-
-
+MARK_3 = None
 # функция выбора типа события
 def type_of_event(message):
-    global MARK_1, DATE_EVENT, MARK_3
+    global MARK_1, DATE_EVENT, MARK_3, FLAG
     sel = message.text
     if sel.lower() == "дата и время":
         MARK_1 = None
         MARK_3 = None
+        FLAG = None
         depending_from_time(message)
     elif sel.lower() == "только дата":
         MARK_1 = 1
         DATE_EVENT = None  # хранит дату события, зависимого только от даты
+        FLAG = None
         depending_from_date(message)
     elif sel.lower() == "независимое":
         category_independent(message)
@@ -298,9 +334,13 @@ def type_of_event(message):
     elif message.text == "/start":
         start_message(message)
     elif message.text == "/help":
+        FLAG = -1
         help_bot(message)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (сделайте правильный выбор).")
+        bot.register_next_step_handler(message, type_of_event)
     # для отката на одно действие назад
-    elif message.text == "/back":
+    elif message.text == "/option" or message.text == "/back":
+        FLAG = -1
         keyboard(message)
     else:
         msg = bot.send_message(message.chat.id, "Проверьте корректность введённой команды или используйте кнопки.")
@@ -367,9 +407,8 @@ def req(now, message):
             f"Мои события на {now.strftime('%d.%m.%Y')}:\n\n{events[1]}{events[2]}{events[3]}{events[4]}{events[5]}")
     keyboard(msg)
 
-CLICK = None
 def my_events(message):
-    global MARK_1, DATE_EVENT, RET_DATA, CLICK
+    global MARK_1, DATE_EVENT, RET_DATA
     sel = message.text
     if sel.lower() == "на сегодня":
         now = datetime.datetime.now()
@@ -408,13 +447,16 @@ def my_events(message):
         else:
             bot.send_message(message.chat.id,
                 f"Мои независимые события:\n\n{events[1]}{events[2]}{events[3]}{events[4]}")
+        keyboard(message)
     # заглушка для перезагрузки бота
     elif message.text == "/start":
         start_message(message)
     elif message.text == "/help":
         help_bot(message)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (сделайте правильный выбор).")
+        bot.register_next_step_handler(message, my_events)
     # для отката на одно действие назад
-    elif message.text == "/back":
+    elif message.text == "/back" or message.text == "/option":
         keyboard(message)
     else:
         msg = bot.send_message(message.chat.id, "Проверьте корректность введённой команды или используйте кнопки.")
@@ -438,41 +480,6 @@ def photo(y, monday, now, send_str, message):
     else:
         bot.send_message(message.chat.id, send_str)
 
-def from_two_to_one(event1, event2):
-    if event1[0] == event2[0] and event1[1] <= event2[1]:
-        return event2
-    elif event1[0] == event2[0] and event1[1] > event2[1]:
-        return event1
-    elif event1[1] < event2[0]:
-        return None
-    elif event1[0] < event2[0] and event1[1] >= event2[0] and event1[1] < event2[1]:
-        return (event1[0],event2[1])
-    elif event1[0] < event2[0] and event1[1] >= event2[1]:
-        return event1
-
-def modifed_events(events_in: list) -> list:
-    events = events_in.copy()
-    intermed_list = list()
-    answers = list()
-    for i in range(len(events)):
-        for j in range(i + 1, len(events)):
-            answer = from_two_to_one(events[i], events[j])
-            if answer is None:
-                pass
-            else:
-                if answer not in answers:
-                    answers.append(answer)
-                if events[i] not in intermed_list:
-                    intermed_list.append(events[i])
-                if events[j] not in intermed_list:
-                    intermed_list.append(events[j])
-    for event in intermed_list:
-        if event in events:
-            events.remove(event)
-    for answer in answers:
-        events.append(answer)
-    events.sort(key=lambda x: x[0])
-    return events
 
 def statistics(message):
     global ID_USER
@@ -600,11 +607,10 @@ def statistics(message):
 #######################################################################################################################
 
 MARK_2 = None
-
-
+  # отвечает за действие команды /back
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
-    global RET_DATA, FINISH, MARK_1, DATE_EVENT, CLICK, MARK_2, NEW_DATE
+    global RET_DATA, FINISH, MARK_1, DATE_EVENT, MARK_2, NEW_DATE, FLAG, CHAT_ID
     RET_DATA = None
     if call is None:
         bot.answer_callback_query(callback_query_id=call.id)
@@ -700,21 +706,44 @@ def handle_callback(call):
 #######################################################################################################################
 # функция, выводящая календарь для начала события или конца события
 def depending_from_time(message):
+    global CHAT_ID
     if START_TIME is None:
-        bot.send_message(message.chat.id, "Выберите день начала события",
+        msg = bot.send_message(message.chat.id, "Выберите день начала события",
                          reply_markup=data_calendar.create_calendar(None, None, 1))
+
     else:
-        bot.send_message(message.chat.id, "Выберите день конца события",
+        msg = bot.send_message(message.chat.id, "Выберите день конца события",
                          reply_markup=data_calendar.create_calendar(None, None, START_DATE))
+    CHAT_ID = (msg.chat.id, msg.message_id)
 
 
 START_TIME, END_TIME = None, None
 
-
 # функция обработки всех возможных вариантов установки времени начала и конца события
 def time_selector(message):
-    global START_TIME, END_TIME, START_DATE, END_DATE
-    if START_TIME is None:
+    global START_TIME, END_TIME, START_DATE, END_DATE, MARK_1, MARK_3
+
+    if message.text == "/start":
+        START_TIME, END_TIME, START_DATE, END_DATE, MARK_1, MARK_3 = None, None, None, None, None, None
+        start_message(message)
+    elif message.text == "/option":
+        START_TIME, END_TIME, START_DATE, END_DATE, MARK_1, MARK_3 = None, None, None, None, None, None
+        keyboard(message)
+    elif message.text == "/help":
+        help_bot(message)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (введите время).")
+        bot.register_next_step_handler(message, time_selector)
+    elif message.text == "/back":
+        START_TIME, END_TIME, START_DATE, END_DATE, MARK_1, MARK_3 = None, None, None, None, None, None
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("Дата и время")
+        button2 = types.KeyboardButton("Только дата")
+        button3 = types.KeyboardButton("Независимое")
+        markup.add(button1, button2, button3)
+        bot.send_message(message.chat.id,
+                         "Выберите нужный тип события.", reply_markup=markup)
+        bot.register_next_step_handler(message, type_of_event)
+    elif START_TIME is None:
         START_TIME = message.text
         pattern = re.compile(r"^\d{1,2}:\d{2}$")
         if pattern.fullmatch(START_TIME) is not None:
@@ -774,20 +803,40 @@ def time_selector(message):
 
 # функция фиксирования начала, конца события и самого события
 def time_save_event(message):
-    global TEXT
+    global TEXT, START_TIME, END_TIME, START_DATE, END_DATE, MARK_1, MARK_3
     TEXT = message.text
-    bot.send_message(message.chat.id, f"Событие '{TEXT}' установлено с {START_DATE} по {END_DATE}")
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    button1 = types.KeyboardButton("да")
-    button2 = types.KeyboardButton("нет")
-    markup.add(button1, button2)
-    bot.send_message(message.chat.id, f"Данное событие циклично?", reply_markup=markup)
-    bot.register_next_step_handler(message, looping)
+    if TEXT == "/start":
+        start_message(message)
+    elif TEXT == "/option":
+        START_TIME, END_TIME, START_DATE, END_DATE, MARK_1, MARK_3 = None, None, None, None, None, None
+        keyboard(message)
+    elif TEXT == "/help":
+        help_bot(message)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (введите название).")
+        bot.register_next_step_handler(message, time_save_event)
+    elif TEXT == "/back":
+        START_TIME, END_TIME, START_DATE, END_DATE, MARK_1, MARK_3 = None, None, None, None, None, None
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("Дата и время")
+        button2 = types.KeyboardButton("Только дата")
+        button3 = types.KeyboardButton("Независимое")
+        markup.add(button1, button2, button3)
+        bot.send_message(message.chat.id,
+                         "Выберите нужный тип события.", reply_markup=markup)
+        bot.register_next_step_handler(message, type_of_event)
+    else:
+        bot.send_message(message.chat.id, f"Событие '{TEXT}' установлено с {START_DATE} по {END_DATE}")
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("да")
+        button2 = types.KeyboardButton("нет")
+        markup.add(button1, button2)
+        bot.send_message(message.chat.id, f"Данное событие циклично?", reply_markup=markup)
+        bot.register_next_step_handler(message, looping)
 
 
 # функция обработки введенного промежутка между повторами
 def day_interval(message):
-    global FINISH, START_TIME, END_TIME
+    global FINISH, START_TIME, END_TIME, START_DATE, END_DATE, MARK_1, MARK_3, FLAG
     num = message.text
     delta = FINISH.date() - END_DATE.date()
     origin_delta = END_DATE - START_DATE
@@ -820,9 +869,24 @@ def day_interval(message):
 
         bot.send_message(message.chat.id,
                          f"Все повторы данного события и само событие зафиксированы. Всего их получилось {i}")
-        START_TIME, END_TIME, FINISH = None, None, None
         bot.send_message(message.chat.id, 'Хотите получить напоминание о данном событии?')
         bot.register_next_step_handler(message, notification)
+    elif num == "/start":
+        start_message(message)
+    elif num == "/option":
+        START_TIME, END_TIME, START_DATE, END_DATE, MARK_1, MARK_3, FLAG = None, None, None, None, None, None, None
+        keyboard(message)
+    elif num == "/help":
+        help_bot(message)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (укажите количество дней между повторами).", reply_markup=None)
+        bot.register_next_step_handler(message, day_interval)
+    elif num == "/back":
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("Да")
+        button2 = types.KeyboardButton("Нет")
+        markup.add(button1, button2)
+        bot.send_message(message.chat.id, "Является ли событие цикличным?", reply_markup=markup)
+        bot.register_next_step_handler(message, looping)
     else:
         bot.send_message(message.chat.id,
                          "Вы ввели не натуральное число или большее, чем количество дней между концом события и днем последнего повторения. Повторите попытку")
@@ -831,12 +895,14 @@ def day_interval(message):
 
 # функция определения цикличности события
 def looping(message):
-    global START_TIME, END_TIME, FINISH
+    global START_TIME, END_TIME, FINISH, START_DATE, END_DATE, MARK_1, MARK_3, FLAG, CHAT_ID
     answer = message.text.lower()
     if answer == "да":
+        FLAG = 1
         dt = END_DATE + datetime.timedelta(days=1)
-        bot.send_message(message.chat.id, "До какого дня нужно повторять событие (включительно)?",
+        msg = bot.send_message(message.chat.id, "До какого дня нужно повторять событие (включительно)?",
                          reply_markup=data_calendar.create_calendar(None, None, dt))
+        CHAT_ID = (msg.chat.id, msg.message_id)
     elif answer == "нет":
 
         none_value = None
@@ -856,6 +922,22 @@ def looping(message):
         markup.add(button1, button2)
         bot.send_message(message.chat.id, "Хотите получить напоминание о данном событии?", reply_markup=markup)
         bot.register_next_step_handler(message, notification)
+    elif answer == "/start":
+        start_message(message)
+    elif answer == "/option":
+        START_TIME, END_TIME, START_DATE, END_DATE, MARK_1, MARK_3 = None, None, None, None, None, None
+        keyboard(message)
+    elif answer == "/help":
+        help_bot(message)
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("да")
+        button2 = types.KeyboardButton("нет")
+        markup.add(button1, button2)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (сделайте правильный выбор).", reply_markup=markup)
+        bot.register_next_step_handler(message, looping)
+    elif answer == "/back":
+        bot.send_message(message.chat.id, "Введите название события.")
+        bot.register_next_step_handler(message, time_save_event)
     else:
         bot.send_message(message.chat.id, "Выберите или введите да/нет для продолжения")
         bot.register_next_step_handler(message, looping)
@@ -870,13 +952,35 @@ def datetime_reminder(message):
 
 CHANGE_EVENT, DATE_EVENT = None, None
 
-
 # функция обработки введенного времени для напоминания
 def get_reminder(message):
-    global CHANGE_EVENT, START_DATE, DATE_EVENT, EVENT_ID, NAME_REM
+    global CHANGE_EVENT, DATE_EVENT, EVENT_ID, NAME_REM, START_TIME, END_TIME, START_DATE, END_DATE, MARK_1, MARK_3, FINISH
     try:
-        if CHANGE_EVENT is not None:
-            reminder_time = datetime.datetime.strptime(message.text, "%Y-%m-%d %H:%M")
+        answer = message.text
+        if answer == "/start":
+            start_message(message)
+        elif answer == "/option":
+            START_TIME, END_TIME, START_DATE, END_DATE, MARK_1, MARK_3, FINISH = None, None, None, None, None, None, None
+            keyboard(message)
+        elif answer == "/help":
+            help_bot(message)
+            bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (введите время напоминания).", reply_markup=None)
+            bot.register_next_step_handler(message, get_reminder)
+        elif answer == "/back":
+            START_TIME, END_TIME, START_DATE, END_DATE, MARK_1, MARK_3, FINISH = None, None, None, None, None, None, None
+            if CHANGE_EVENT is None:
+                markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+                button1 = types.KeyboardButton("да")
+                button2 = types.KeyboardButton("нет")
+                markup.add(button1, button2)
+                bot.send_message(message.chat.id, "Желаете установить напоминание?", reply_markup=markup)
+                bot.register_next_step_handler(message, notification)
+            else: 
+                pass
+                # ПРИ РЕДАКТИРОВАНИИ ЗАВТРА УТРОМ
+            
+        elif CHANGE_EVENT is not None:
+            reminder_time = datetime.datetime.strptime(answer, "%Y-%m-%d %H:%M")
             # если дата напоминания позже начала события
             if DATE_EVENT < reminder_time:
                 bot.send_message(message.chat.id,
@@ -907,7 +1011,7 @@ def get_reminder(message):
                 markup.add(button1, button2)
                 bot.send_message(message.chat.id, "Желаете продолжить редактирование?", reply_markup=markup)
                 bot.register_next_step_handler(message, resulting_action)
-
+        # создание
         else:
             reminder_time = datetime.datetime.strptime(message.text, "%Y-%m-%d %H:%M")
             # если дата напоминания позже начала события
@@ -926,6 +1030,7 @@ def get_reminder(message):
                 seconds = date.total_seconds()
                 reminder_timer = threading.Timer(seconds, send_reminder, [message.chat.id, TEXT])
                 reminder_timer.start()
+                START_TIME, END_TIME, FINISH = None, None, None
                 keyboard(message)
     except:
         bot.send_message(message.chat.id, "Вы ввели неверный формат даты и времени, попробуйте еще раз.")
@@ -947,11 +1052,38 @@ def send_reminder(chat_id, reminder_name):
 
 # функция определения потребности напоминания
 def notification(message):
-    if message.text.lower() == "нет":
+    global START_TIME, END_TIME, START_DATE, END_DATE, MARK_1, MARK_3, FINISH
+    answer = message.text.lower()
+    if answer == "нет":
         bot.send_message(message.chat.id, "Напоминание не будет установлено")
+        START_TIME, END_TIME, FINISH = None, None, None
         keyboard(message)
-    elif message.text.lower() == "да":
+    elif answer == "да":
         datetime_reminder(message)
+    elif answer == "/start":
+        start_message(message)
+    elif answer == "/option":
+        START_TIME, END_TIME, START_DATE, END_DATE, MARK_1, MARK_3, FINISH = None, None, None, None, None, None, None
+        keyboard(message)
+    elif answer == "/help":
+        help_bot(message)
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("Да")
+        button2 = types.KeyboardButton("Нет")
+        markup.add(button1, button2)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (желаете получить напоминание).", reply_markup=markup)
+        bot.register_next_step_handler(message, notification)
+    elif answer == "/back":
+        if FINISH is not None:
+            bot.send_message(message.chat.id, "Введите количество дней в промежутке между повторами.")
+            bot.register_next_step_handler(message, day_interval)
+        else:
+            markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+            button1 = types.KeyboardButton("Да")
+            button2 = types.KeyboardButton("Нет")
+            markup.add(button1, button2)
+            bot.send_message(message.chat.id, "Является ли событие цикличным?", reply_markup=markup)
+            bot.register_next_step_handler(message, looping)
     else:
         bot.send_message(message.chat.id, "Напишите ответ в виде 'Да' или 'Нет'!")
         bot.register_next_step_handler(message, notification)
@@ -977,14 +1109,34 @@ def category_independent(message):
 
 # функция наименования события
 def name_independent(message):
-    # прописать варианты всех возможных команд через elif!
     global CATEGORY
     CATEGORY = message.text.lower()
     if CATEGORY == "срочное важное" or CATEGORY == "несрочное важное" or CATEGORY == "срочное неважное" or CATEGORY == "несрочное неважное":
         bot.send_message(message.chat.id, "Введите название события")
         bot.register_next_step_handler(message, exit_independent)
-    elif CATEGORY == "/back":
+    elif CATEGORY == "/start":
+        start_message(message)
+    elif CATEGORY == "/help":
+        help_bot(message)
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("Срочное важное")
+        button2 = types.KeyboardButton("Несрочное важное")
+        button3 = types.KeyboardButton("Срочное неважное")
+        button4 = types.KeyboardButton("Несрочное неважное")
+        markup.add(button1, button2, button3, button4)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (выберите категорию события).", reply_markup=markup)
+        bot.register_next_step_handler(message, name_independent)
+    elif CATEGORY == "/option":
         keyboard(message)
+    elif CATEGORY == "/back":
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("Дата и время")
+        button2 = types.KeyboardButton("Только дата")
+        button3 = types.KeyboardButton("Независимое")
+        markup.add(button1, button2, button3)
+        bot.send_message(message.chat.id,
+                         "Выберите нужный тип события.", reply_markup=markup)
+        bot.register_next_step_handler(message, type_of_event)
     else:
         bot.send_message(message.chat.id, "Проверьте корректность введённой команды или используйте кнопки.")
         bot.register_next_step_handler(message, name_independent)
@@ -992,7 +1144,6 @@ def name_independent(message):
 
 # результирующая функция
 def exit_independent(message):
-    # ЗДЕСЬ И ВО ВСЕХ ТАКИХ ФУНКЦИЯХ НУЖНО ПРОПИСАТЬ ДЕЙСТВИЯ КОМАНД /START, /HELP И ДРУГИХ!
     global ID_USER, CATEGORY
     text = message.text
     get_events = f"""
@@ -1008,7 +1159,25 @@ def exit_independent(message):
     for i in check_list:
         if i[0].lower() == text.lower():
             check = False
-    if check:
+    if text == "/start":
+        start_message(message)
+    elif text == "/help":
+        help_bot(message)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (введите название события).", reply_markup=None)
+        bot.register_next_step_handler(message, exit_independent)
+    elif text == "/option":
+        keyboard(message)
+    elif text == "/back":
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("Срочное важное")
+        button2 = types.KeyboardButton("Несрочное важное")
+        button3 = types.KeyboardButton("Срочное неважное")
+        button4 = types.KeyboardButton("Несрочное неважное")
+        markup.add(button1, button2, button3, button4)
+        bot.send_message(message.chat.id,
+                         "Выберите нужную категорию.", reply_markup=markup)
+        bot.register_next_step_handler(message, name_independent)
+    elif check:
         create_event = f"""
         INSERT INTO
           plans (idUser, DependTime, Event)
@@ -1020,7 +1189,7 @@ def exit_independent(message):
         bot.send_message(message.chat.id, "Событие '{}' успешно добавлено в категорию '{}'!".format(text, CATEGORY))
         keyboard(message)
     else:
-        bot.send_message(message.chat.id, "Событие с данным названием и данной степенью важности уже существуют")
+        bot.send_message(message.chat.id, "Событие с данным названием и в данной категории уже существует")
 
 
 #######################################################################################################################
@@ -1030,13 +1199,15 @@ def exit_independent(message):
 # ОБРАБОТКА СОБЫТИЯ, ЗАВИСИМОГО ТОЛЬКО ОТ ДАТЫ
 #######################################################################################################################
 def depending_from_date(message):
-    bot.send_message(message.chat.id, "Выберите дату события",
+    global CHAT_ID
+    msg = bot.send_message(message.chat.id, "Выберите дату события",
                      reply_markup=data_calendar.create_calendar(None, None, 1))
+    CHAT_ID = (msg.chat.id, msg.message_id)
 
 
 # функция определения названия события
 def naming(message):
-    global NAME, DATE_EVENT
+    global NAME, DATE_EVENT, FLAG
     NAME = message.text
     get_check = f"""
         SELECT DateEvent, Event
@@ -1052,7 +1223,27 @@ def naming(message):
     for i in new_check_list:
         if event == i:
             check = False
-    if check:
+    if NAME == "/start":
+        start_message(message)
+    elif NAME == "/option":
+        DATE_EVENT = None
+        keyboard(message)
+    elif NAME == "/help":
+        FLAG = -1
+        help_bot(message)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (введите название события).", reply_markup=None)
+        bot.register_next_step_handler(message, naming)
+    elif NAME == "/back":
+        NAME, DATE_EVENT = None, None
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("Дата и время")
+        button2 = types.KeyboardButton("Только дата")
+        button3 = types.KeyboardButton("Независимое")
+        markup.add(button1, button2, button3)
+        bot.send_message(message.chat.id,
+                         "Выберите нужный тип события.", reply_markup=markup)
+        bot.register_next_step_handler(message, type_of_event)
+    elif check:
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         button1 = types.KeyboardButton("Срочное важное")
         button2 = types.KeyboardButton("Несрочное важное")
@@ -1067,7 +1258,7 @@ def naming(message):
 
 
 def loop_define(message):
-    global TYPE
+    global TYPE, DATE_EVENT, FLAG
     TYPE = message.text.lower()
     if TYPE == "срочное важное" or TYPE == "несрочное важное" or TYPE == "срочное неважное" or TYPE == "несрочное неважное":
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -1077,7 +1268,24 @@ def loop_define(message):
         bot.send_message(message.chat.id, "Последнее, данное событие является цикличным?", reply_markup=markup)
         bot.register_next_step_handler(message, looping_date)
     elif TYPE == "/back":
+        bot.send_message(message.chat.id, "Введите название события")
+        bot.register_next_step_handler(message, naming)
+    elif TYPE == "/start":
+        start_message(message)
+    elif TYPE == "/option":
+        DATE_EVENT = None
         keyboard(message)
+    elif TYPE == "/help":
+        FLAG = -1
+        help_bot(message)
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("Срочное важное")
+        button2 = types.KeyboardButton("Несрочное важное")
+        button3 = types.KeyboardButton("Срочное неважное")
+        button4 = types.KeyboardButton("Несрочное неважное")
+        markup.add(button1, button2, button3, button4)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (выберите категорию события).", reply_markup=markup)
+        bot.register_next_step_handler(message, loop_define)
     else:
         bot.send_message(message.chat.id, "Проверьте корректность введённой команды или используйте кнопки.")
         bot.register_next_step_handler(message, loop_define)
@@ -1085,12 +1293,14 @@ def loop_define(message):
 
 # функция определения цикличности
 def looping_date(message):
-    global DATE_EVENT
+    global DATE_EVENT, FLAG, CHAT_ID
     answer = message.text.lower()
     if answer == "да":
+        FLAG = 1
         dt = DATE_EVENT + datetime.timedelta(days=1)
-        bot.send_message(message.chat.id, "До какого дня нужно повторять событие (включительно)?",
+        msg = bot.send_message(message.chat.id, "До какого дня нужно повторять событие (включительно)?",
                          reply_markup=data_calendar.create_calendar(None, None, dt))
+        CHAT_ID = (msg.chat.id, msg.message_id)
     elif answer == "нет":
 
         create_event = f"""
@@ -1103,6 +1313,29 @@ def looping_date(message):
 
         bot.send_message(message.chat.id, f"Событие {NAME} записано на {DATE_EVENT.date()}")
         keyboard(message)
+    elif answer == "/back":
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("Срочное важное")
+        button2 = types.KeyboardButton("Несрочное важное")
+        button3 = types.KeyboardButton("Срочное неважное")
+        button4 = types.KeyboardButton("Несрочное неважное")
+        markup.add(button1, button2, button3, button4)
+        bot.send_message(message.chat.id, "Выберите категорию события?", reply_markup=markup)
+        bot.register_next_step_handler(message, loop_define)
+    elif answer == "/start":
+        start_message(message)
+    elif answer == "/option":
+        DATE_EVENT = None
+        keyboard(message)
+    elif answer == "/help":
+        FLAG = -1
+        help_bot(message)
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("да")
+        button2 = types.KeyboardButton("нет")
+        markup.add(button1, button2)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (определите цикличность события)", reply_markup=markup)
+        bot.register_next_step_handler(message, looping_date)
     else:
         bot.send_message(message.chat.id, "Выберите или введите да/нет для продолжения")
         bot.register_next_step_handler(message, looping_date)
@@ -1110,6 +1343,7 @@ def looping_date(message):
 
 # функция добавления всех повторов
 def day_interval_for_date(message):
+    global DATE_EVENT, FINISH, FLAG
     num = message.text
     delta = FINISH - DATE_EVENT
     if (num.isdigit() and int(num) > 0 and datetime.timedelta(days=int(num)) <= delta):
@@ -1139,6 +1373,23 @@ def day_interval_for_date(message):
         bot.send_message(message.chat.id,
                          f"Все повторы данного события, а также и само событие зафиксированы. Всего их получилось {i}")
         keyboard(message)
+    elif num == "/start":
+        start_message(message)
+    elif num == "/option":
+        DATE_EVENT = None
+        keyboard(message)
+    elif num == "/help":
+        FLAG = -1
+        help_bot(message)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (укажите количество дней между повторами).", reply_markup=None)
+        bot.register_next_step_handler(message, day_interval_for_date)
+    elif num == "/back":
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("Да")
+        button2 = types.KeyboardButton("Нет")
+        markup.add(button1, button2)
+        bot.send_message(message.chat.id, "Является ли событие цикличным?", reply_markup=markup)
+        bot.register_next_step_handler(message, looping_date)
     else:
         bot.send_message(message.chat.id, "Ошибка. Введите корректное натуральное число")
         bot.register_next_step_handler(message, day_interval_for_date)
@@ -1152,15 +1403,25 @@ def day_interval_for_date(message):
 #######################################################################################################################
 #функция выбора типа окна
 def free_windows(message):
-    global MARK_1, DATE_EVENT
+    global MARK_1, DATE_EVENT, FLAG
     answer = message.text.lower()
     if answer == "на день":
         MARK_1 = 3
         DATE_EVENT = None
+        FLAG = 1
         depending_from_date(message)
     elif answer == "на месяц":
         bot.send_message(message.chat.id, "Введите интересующий вас год", reply_markup=None)
         bot.register_next_step_handler(message, year_for_window)
+    elif answer == "/start":
+        start_message(message)
+    elif answer == "/option" or answer == "/back":
+        keyboard(message)
+    elif answer == "/help":
+        FLAG = -1
+        help_bot(message)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (выберите интересующий Вас отрезок времени).", reply_markup=None)
+        bot.register_next_step_handler(message, free_windows)
     else:
         bot.send_message(message.chat.id, "Ошибка. Повторите ввод/выбор")
         bot.register_next_step_handler(message, free_windows)
@@ -1190,26 +1451,33 @@ def search_free_window(message):
             keyboard(message)
             return None
         elif begin[0] < d:
-            events.append([datetime.time(0, 0), end[-1]])
+            events.append((datetime.time(0, 0), end[-1]))
             i = 1
         elif begin[0] == d and end[0] == d:
-            events.append([begin[-1], end[-1]])
+            events.append((begin[-1], end[-1]))
         else:
-            events.append([begin[-1], datetime.time(23, 59)])
+            events.append((begin[-1], datetime.time(23, 59)))
             j = 1
 
     if i != 1:
         events.append([datetime.time(0, 0)])
     if j != 1:
         events.append([datetime.time(23, 59)])
+    
+    events = list(set(map(tuple, events)))
     events.sort(key=lambda x: x[0])
+
+    print(events)
     
     while True:
         mod_events = modifed_events(events)
-        if set(map(tuple, mod_events)) == set(map(tuple, events)):
+        print(f'\nmod: {mod_events}\n')
+        if set(mod_events) == set(events):
             break
         else:
             events = mod_events
+
+    print(f'\n{events}\n')
 
     windows = list()
     for i in range(len(events) - 1):
@@ -1231,6 +1499,22 @@ def year_for_window(message):
         YEAR = int(year)
         bot.send_message(message.chat.id, "Отлично, теперь введите номер интересующего Вас месяца")
         bot.register_next_step_handler(message, month_for_window)
+    elif year == "/start":
+        start_message(message)
+    elif year == "/option":
+        keyboard(message)
+    elif year == "/back":
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("На день")
+        button2 = types.KeyboardButton("На месяц")
+        markup.add(button1, button2)
+        bot.send_message(message.chat.id, "Выберите интересующий Вас отрезок времени.", reply_markup=markup)
+        bot.register_next_step_handler(message, free_windows)
+    elif year == "/help":
+        FLAG = -1
+        help_bot(message)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (введите интересующий Вас год).", reply_markup=None)
+        bot.register_next_step_handler(message, year_for_window)
     else:
         bot.send_message(message.chat.id, "Введите корректный год")
         bot.register_next_step_handler(message, year_for_window)
@@ -1298,13 +1582,22 @@ def month_for_window(message):
         for event in month_datetime_events:
             events.add(int(event[0].strftime("%d")))
 
-        # month_days = set(range(1, days + 1))
-        # windows = tuple(month_days^events)
-
         calendar_image.get_image_calendar(tuple(events), YEAR, MONTH)
         img = open("calendar.png", "rb")
         bot.send_photo(message.chat.id, photo=img, caption="Ваши свободные окна на указанный месяц")
         keyboard(message)
+    elif month == "/start":
+        start_message(message)
+    elif month == "/option":
+        keyboard(message)
+    elif month == "/back":
+        bot.send_message(message.chat.id, "Введите интересующий Вас год.", reply_markup=None)
+        bot.register_next_step_handler(message, year_for_window)
+    elif month == "/help":
+        FLAG = -1
+        help_bot(message)
+        bot.send_message(message.chat.id, "Вернёмся к нашему диалогу (введите интересующий Вас месяц).", reply_markup=None)
+        bot.register_next_step_handler(message, month_for_window)
     else:
         bot.send_message(message.chat.id, "Введите корректный месяц")
         bot.register_next_step_handler(message, month_for_window)
@@ -1320,7 +1613,7 @@ def from_two_to_one(event1, event2) -> list:
         return event1
     elif event1[-1] < event2[0]:  # случай нулевого пересечения  
         return None
-    elif event1[0] < event2[0] and event1[1] >= event2[0] and event1[-1] < event2[-1]:
+    elif event1[0] < event2[0] and event1[-1] >= event2[0] and event1[-1] < event2[-1]:
         return (event1[0],event2[-1])
     elif event1[0] < event2[0] and event1[-1] >= event2[-1]:
         return event1
@@ -1333,6 +1626,7 @@ def modifed_events(events_in: list) -> list:
     for i in range(len(events)):
         for j in range(i + 1, len(events)):
             answer = from_two_to_one(events[i], events[j])
+            print(f'\nanswer: {answer}\n')
             if answer is None:
                 pass
             else:
@@ -1343,6 +1637,7 @@ def modifed_events(events_in: list) -> list:
                 if events[j] not in intermed_list:
                     intermed_list.append(events[j])            
     
+    print(f'\nanswers: {answers}\n{intermed_list}\n')
     for event in intermed_list:
         if event in events:
             events.remove(event)
@@ -1816,7 +2111,47 @@ def resulting_action(message):
 #######################################################################################################################
 @bot.message_handler(content_types=["text"])
 def send_message(message):
-    bot.send_message(message.chat.id, "Соблюдайте, пожалуйста, формат сообщений")
+    global FLAG, START_TIME, END_TIME, START_DATE, END_DATE, MARK_1, MARK_3, CHAT_ID
+    if FLAG is None and message.text == "/back":
+        START_TIME, END_TIME, START_DATE, END_DATE, MARK_1, MARK_3 = None, None, None, None, None, None
+        bot.delete_message(chat_id=CHAT_ID[0], message_id=CHAT_ID[1])
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("Дата и время")
+        button2 = types.KeyboardButton("Только дата")
+        button3 = types.KeyboardButton("Независимое")
+        markup.add(button1, button2, button3)
+        bot.send_message(message.chat.id,
+                         "Выберите нужный тип события.", reply_markup=markup)
+        bot.register_next_step_handler(message, type_of_event)
+    elif FLAG == 1 and message.text == "/back" and MARK_1 == 1:
+        FLAG = None
+        bot.delete_message(chat_id=CHAT_ID[0], message_id=CHAT_ID[1])
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("Да")
+        button2 = types.KeyboardButton("Нет")
+        markup.add(button1, button2)
+        bot.send_message(message.chat.id, "Последнее, является ли событие цикличным?", reply_markup=markup)
+        bot.register_next_step_handler(message, looping_date)
+    elif FLAG == 1 and message.text == "/back" and MARK_1 == 3:
+        FLAG = None
+        bot.delete_message(chat_id=CHAT_ID[0], message_id=CHAT_ID[1])
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("На день")
+        button2 = types.KeyboardButton("На месяц")
+        markup.add(button1, button2)
+        bot.send_message(message.chat.id, "Выберите интересующий вас отрезок времени.", reply_markup=markup)
+        bot.register_next_step_handler(message, free_windows)
+    elif FLAG == 1 and message.text == "/back":
+        FLAG = None
+        bot.delete_message(chat_id=CHAT_ID[0], message_id=CHAT_ID[1])
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        button1 = types.KeyboardButton("Да")
+        button2 = types.KeyboardButton("Нет")
+        markup.add(button1, button2)
+        bot.send_message(message.chat.id, "Является ли событие цикличным?", reply_markup=markup)
+        bot.register_next_step_handler(message, looping)
+    else:
+        bot.send_message(message.chat.id, "Соблюдайте, пожалуйста, формат сообщений")
 
 
 #######################################################################################################################
@@ -1828,9 +2163,8 @@ def send_message(message):
 bot.set_my_commands([
     telebot.types.BotCommand("/start", "Перезапуск бота"),
     telebot.types.BotCommand("/back", "Назад"),
-    telebot.types.BotCommand("/help", "Помощь"),
-    telebot.types.BotCommand("/option", 'Доступные опции'),
-    telebot.types.BotCommand("/settings", "Изменить логин или пароль")
+    telebot.types.BotCommand("/option", "Доступные опции"),
+    telebot.types.BotCommand("/help", "Помощь")
 ])
 #######################################################################################################################
 
